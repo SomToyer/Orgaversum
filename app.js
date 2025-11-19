@@ -14,9 +14,16 @@ class Orgaversum {
         // Interaction state
         this.dragging = null;
         this.hovering = null;
+        this.hoveringStation = null;
         this.connectMode = false;
         this.connectFirst = null;
         this.mousePos = { x: 0, y: 0 };
+
+        // Station state
+        this.currentStationType = null;
+        this.currentStationFile = null;
+        this.previewingStation = null;
+        this.previewingMoon = null;
 
         // Animation
         this.time = 0;
@@ -90,11 +97,53 @@ class Orgaversum {
         document.getElementById('editNameInput').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.confirmEdit();
         });
+
+        // Station buttons
+        document.querySelectorAll('.btn-station').forEach(btn => {
+            btn.addEventListener('click', () => this.showStationModal(btn.dataset.type));
+        });
+
+        // Station Modal
+        document.getElementById('stationCancel').addEventListener('click', () => this.hideStationModal());
+        document.getElementById('stationConfirm').addEventListener('click', () => this.confirmStation());
+
+        // File upload
+        const fileInput = document.getElementById('fileInput');
+        const uploadArea = document.getElementById('fileUploadArea');
+
+        fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                this.handleFileSelect({ target: fileInput });
+            }
+        });
+
+        // Preview Modal
+        document.getElementById('previewClose').addEventListener('click', () => this.hidePreviewModal());
+        document.getElementById('previewDelete').addEventListener('click', () => this.deleteStation());
     }
 
     // Mouse/Touch Handlers
     onMouseDown(e) {
         const pos = this.getMousePos(e);
+
+        // Check for station click first
+        const stationClick = this.getStationAt(pos.x, pos.y);
+        if (stationClick) {
+            this.showPreviewModal(stationClick.moon, stationClick.station);
+            return;
+        }
+
         const obj = this.getObjectAt(pos.x, pos.y);
 
         if (this.connectMode && obj) {
@@ -115,8 +164,12 @@ class Orgaversum {
             this.dragging.y = pos.y - this.dragging.offsetY;
             this.saveData();
         } else {
+            // Check for station hover
+            const stationHover = this.getStationAt(pos.x, pos.y);
+            this.hoveringStation = stationHover;
+
             this.hovering = this.getObjectAt(pos.x, pos.y);
-            this.canvas.style.cursor = this.hovering ? 'pointer' : 'grab';
+            this.canvas.style.cursor = (this.hovering || this.hoveringStation) ? 'pointer' : 'grab';
         }
     }
 
@@ -169,6 +222,34 @@ class Orgaversum {
         }
 
         return null;
+    }
+
+    getStationAt(x, y) {
+        for (const moon of this.moons) {
+            if (!moon.stations) continue;
+
+            for (let i = 0; i < moon.stations.length; i++) {
+                const station = moon.stations[i];
+                const pos = this.getStationPosition(moon, i, moon.stations.length);
+                const dist = Math.hypot(x - pos.x, y - pos.y);
+
+                if (dist <= 8) {
+                    return { moon, station, index: i };
+                }
+            }
+        }
+        return null;
+    }
+
+    getStationPosition(moon, index, total) {
+        const orbitRadius = moon.radius + 20;
+        const angleOffset = (Math.PI * 2 / total) * index;
+        const angle = this.time * 0.5 + angleOffset;
+
+        return {
+            x: moon.x + Math.cos(angle) * orbitRadius,
+            y: moon.y + Math.sin(angle) * orbitRadius
+        };
     }
 
     // Connect Mode
@@ -253,11 +334,19 @@ class Orgaversum {
         this.editingObj = obj;
         const modal = document.getElementById('editModal');
         const input = document.getElementById('editNameInput');
+        const stationControls = document.getElementById('stationControls');
 
         input.value = obj.name;
         modal.classList.remove('hidden');
         input.focus();
         input.select();
+
+        // Show station controls only for moons
+        if (obj.type === 'moon') {
+            stationControls.classList.remove('hidden');
+        } else {
+            stationControls.classList.add('hidden');
+        }
     }
 
     hideEditModal() {
@@ -324,12 +413,175 @@ class Orgaversum {
             y: 150 + Math.random() * (this.canvas.height - 300),
             radius: 15 + Math.random() * 10,
             color: color,
-            phase: Math.random() * Math.PI * 2
+            phase: Math.random() * Math.PI * 2,
+            stations: []
         };
 
         this.moons.push(moon);
         this.createParticles(moon.x, moon.y, 20);
         this.saveData();
+    }
+
+    // Station methods
+    showStationModal(type) {
+        this.currentStationType = type;
+        this.currentStationFile = null;
+
+        const modal = document.getElementById('stationModal');
+        const title = document.getElementById('stationModalTitle');
+        const fileArea = document.getElementById('fileUploadArea');
+        const noteInput = document.getElementById('noteInput');
+        const nameInput = document.getElementById('stationName');
+
+        const typeNames = {
+            image: 'Bild',
+            video: 'Video',
+            audio: 'Audio',
+            note: 'Notiz'
+        };
+
+        title.textContent = `${typeNames[type]} hinzufügen`;
+        nameInput.value = '';
+
+        if (type === 'note') {
+            fileArea.classList.add('hidden');
+            noteInput.classList.remove('hidden');
+            noteInput.value = '';
+        } else {
+            fileArea.classList.remove('hidden');
+            noteInput.classList.add('hidden');
+
+            const fileInput = document.getElementById('fileInput');
+            fileInput.value = '';
+            fileArea.classList.remove('has-file');
+            fileArea.querySelector('p').textContent = 'Datei hierher ziehen oder klicken';
+
+            // Set accept attribute based on type
+            const accepts = {
+                image: 'image/*',
+                video: 'video/*',
+                audio: 'audio/*'
+            };
+            fileInput.accept = accepts[type];
+        }
+
+        modal.classList.remove('hidden');
+        nameInput.focus();
+    }
+
+    hideStationModal() {
+        document.getElementById('stationModal').classList.add('hidden');
+        this.currentStationType = null;
+        this.currentStationFile = null;
+    }
+
+    handleFileSelect(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const uploadArea = document.getElementById('fileUploadArea');
+        uploadArea.classList.add('has-file');
+        uploadArea.querySelector('p').textContent = file.name;
+
+        // Read file as base64
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            this.currentStationFile = event.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    confirmStation() {
+        if (!this.editingObj || this.editingObj.type !== 'moon') return;
+
+        const name = document.getElementById('stationName').value.trim() || 'Station';
+        let data;
+
+        if (this.currentStationType === 'note') {
+            data = document.getElementById('noteInput').value;
+            if (!data.trim()) return;
+        } else {
+            if (!this.currentStationFile) return;
+            data = this.currentStationFile;
+        }
+
+        // Initialize stations array if needed
+        if (!this.editingObj.stations) {
+            this.editingObj.stations = [];
+        }
+
+        this.editingObj.stations.push({
+            id: this.nextId++,
+            type: this.currentStationType,
+            name: name,
+            data: data
+        });
+
+        this.createParticles(this.editingObj.x, this.editingObj.y, 15);
+        this.hideStationModal();
+        this.saveData();
+    }
+
+    showPreviewModal(moon, station) {
+        this.previewingMoon = moon;
+        this.previewingStation = station;
+
+        const modal = document.getElementById('previewModal');
+        const title = document.getElementById('previewTitle');
+        const container = document.getElementById('previewContainer');
+
+        title.textContent = station.name;
+        container.innerHTML = '';
+
+        switch (station.type) {
+            case 'image':
+                const img = document.createElement('img');
+                img.src = station.data;
+                container.appendChild(img);
+                break;
+
+            case 'video':
+                const video = document.createElement('video');
+                video.src = station.data;
+                video.controls = true;
+                container.appendChild(video);
+                break;
+
+            case 'audio':
+                const audio = document.createElement('audio');
+                audio.src = station.data;
+                audio.controls = true;
+                container.appendChild(audio);
+                break;
+
+            case 'note':
+                const note = document.createElement('div');
+                note.className = 'note-preview';
+                note.textContent = station.data;
+                container.appendChild(note);
+                break;
+        }
+
+        modal.classList.remove('hidden');
+    }
+
+    hidePreviewModal() {
+        document.getElementById('previewModal').classList.add('hidden');
+        this.previewingMoon = null;
+        this.previewingStation = null;
+    }
+
+    deleteStation() {
+        if (!this.previewingMoon || !this.previewingStation) return;
+
+        const index = this.previewingMoon.stations.findIndex(s => s.id === this.previewingStation.id);
+        if (index !== -1) {
+            this.previewingMoon.stations.splice(index, 1);
+            this.createParticles(this.previewingMoon.x, this.previewingMoon.y, 10);
+            this.saveData();
+        }
+
+        this.hidePreviewModal();
     }
 
     clearAll() {
@@ -594,8 +846,99 @@ class Orgaversum {
             ctx.stroke();
         }
 
+        // Draw stations
+        this.drawStations(moon);
+
         // Name
         this.drawLabel(moon);
+    }
+
+    drawStations(moon) {
+        if (!moon.stations || moon.stations.length === 0) return;
+
+        const ctx = this.ctx;
+        const total = moon.stations.length;
+
+        // Draw orbit path
+        ctx.beginPath();
+        ctx.arc(moon.x, moon.y, moon.radius + 20, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Draw each station
+        moon.stations.forEach((station, i) => {
+            const pos = this.getStationPosition(moon, i, total);
+            const isHovered = this.hoveringStation &&
+                              this.hoveringStation.station.id === station.id;
+
+            // Station glow
+            const gradient = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, 12);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+            gradient.addColorStop(1, 'transparent');
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 12, 0, Math.PI * 2);
+            ctx.fillStyle = gradient;
+            ctx.fill();
+
+            // Station body (different shapes for different types)
+            ctx.save();
+            ctx.translate(pos.x, pos.y);
+
+            // Color based on type
+            const colors = {
+                image: '#10b981',
+                video: '#f59e0b',
+                audio: '#6366f1',
+                note: '#ec4899'
+            };
+            const color = colors[station.type] || '#fff';
+
+            // Draw station shape
+            ctx.beginPath();
+            if (station.type === 'image') {
+                // Square for images
+                ctx.rect(-5, -5, 10, 10);
+            } else if (station.type === 'video') {
+                // Triangle for video
+                ctx.moveTo(0, -6);
+                ctx.lineTo(6, 4);
+                ctx.lineTo(-6, 4);
+                ctx.closePath();
+            } else if (station.type === 'audio') {
+                // Circle for audio
+                ctx.arc(0, 0, 5, 0, Math.PI * 2);
+            } else {
+                // Diamond for notes
+                ctx.moveTo(0, -6);
+                ctx.lineTo(6, 0);
+                ctx.lineTo(0, 6);
+                ctx.lineTo(-6, 0);
+                ctx.closePath();
+            }
+
+            ctx.fillStyle = color;
+            ctx.fill();
+
+            // Hover effect
+            if (isHovered) {
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+
+            ctx.restore();
+
+            // Draw connecting line to moon
+            ctx.beginPath();
+            ctx.moveTo(moon.x, moon.y);
+            ctx.lineTo(pos.x, pos.y);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        });
     }
 
     drawLabel(obj) {

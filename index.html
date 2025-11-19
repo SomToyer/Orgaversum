@@ -52,6 +52,44 @@
                     <button id="editCancel" class="btn btn-cancel">Abbrechen</button>
                     <button id="editConfirm" class="btn btn-confirm">Speichern</button>
                 </div>
+                <div id="stationControls" class="station-controls hidden">
+                    <h3>Raumstationen</h3>
+                    <div class="station-buttons">
+                        <button id="addImage" class="btn btn-station" data-type="image">Bild</button>
+                        <button id="addVideo" class="btn btn-station" data-type="video">Video</button>
+                        <button id="addAudio" class="btn btn-station" data-type="audio">Audio</button>
+                        <button id="addNote" class="btn btn-station" data-type="note">Notiz</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Station Upload Modal -->
+        <div id="stationModal" class="modal hidden">
+            <div class="modal-content">
+                <h2 id="stationModalTitle">Raumstation hinzufügen</h2>
+                <input type="text" id="stationName" placeholder="Name der Station...">
+                <div id="fileUploadArea" class="file-upload-area">
+                    <input type="file" id="fileInput" accept="*/*">
+                    <p>Datei hierher ziehen oder klicken</p>
+                </div>
+                <textarea id="noteInput" class="note-input hidden" placeholder="Notiz eingeben..."></textarea>
+                <div class="modal-buttons">
+                    <button id="stationCancel" class="btn btn-cancel">Abbrechen</button>
+                    <button id="stationConfirm" class="btn btn-confirm">Hinzufügen</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Station Preview Modal -->
+        <div id="previewModal" class="modal hidden">
+            <div class="modal-content preview-content">
+                <h2 id="previewTitle">Station</h2>
+                <div id="previewContainer"></div>
+                <div class="modal-buttons">
+                    <button id="previewDelete" class="btn btn-delete">Löschen</button>
+                    <button id="previewClose" class="btn btn-cancel">Schließen</button>
+                </div>
             </div>
         </div>
     </div>
