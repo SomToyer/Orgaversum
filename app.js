@@ -55,6 +55,11 @@ class Orgaversum {
         this.objects3D = new Map();
         this.connectionLines = [];
         this.selectedObject = null;
+        this.isCockpitView = true;
+        this.shipSpeed = 0;
+        this.shipRotation = 0;
+        this.keys = { w: false, s: false, a: false, d: false };
+        this.nearestConnection = null;
 
         // Colors
         this.planetColors = [
@@ -175,8 +180,32 @@ class Orgaversum {
 
         // 3D Controls
         document.getElementById('startTravel').addEventListener('click', () => this.startTravel());
-        document.getElementById('resetCamera').addEventListener('click', () => this.resetCamera());
-        document.getElementById('followShip').addEventListener('click', () => this.toggleFollowShip());
+        document.getElementById('cockpitView').addEventListener('click', () => this.setCockpitView(true));
+        document.getElementById('externalView').addEventListener('click', () => this.setCockpitView(false));
+
+        // Keyboard controls for spaceship
+        document.addEventListener('keydown', (e) => this.onKeyDown(e));
+        document.addEventListener('keyup', (e) => this.onKeyUp(e));
+    }
+
+    onKeyDown(e) {
+        if (!this.is3DMode) return;
+
+        switch (e.key.toLowerCase()) {
+            case 'w': this.keys.w = true; break;
+            case 's': this.keys.s = true; break;
+            case 'a': this.keys.a = true; break;
+            case 'd': this.keys.d = true; break;
+        }
+    }
+
+    onKeyUp(e) {
+        switch (e.key.toLowerCase()) {
+            case 'w': this.keys.w = false; break;
+            case 's': this.keys.s = false; break;
+            case 'a': this.keys.a = false; break;
+            case 'd': this.keys.d = false; break;
+        }
     }
 
     // Mouse/Touch Handlers
@@ -1548,12 +1577,17 @@ class Orgaversum {
         const container3D = document.getElementById('universe3D');
         const controls3D = document.getElementById('controls3D');
 
+        const cockpitOverlay = document.getElementById('cockpitOverlay');
+
         if (this.is3DMode) {
             btn.classList.add('active');
             btn.innerHTML = '<span class="icon">🗺️</span> 2D Ansicht';
             canvas2D.classList.add('hidden');
             container3D.classList.remove('hidden');
             controls3D.classList.remove('hidden');
+            if (this.isCockpitView) {
+                cockpitOverlay.classList.remove('hidden');
+            }
             this.init3DScene();
         } else {
             btn.classList.remove('active');
@@ -1561,7 +1595,25 @@ class Orgaversum {
             canvas2D.classList.remove('hidden');
             container3D.classList.add('hidden');
             controls3D.classList.add('hidden');
+            cockpitOverlay.classList.add('hidden');
             this.dispose3DScene();
+        }
+    }
+
+    setCockpitView(isCockpit) {
+        this.isCockpitView = isCockpit;
+        const cockpitBtn = document.getElementById('cockpitView');
+        const externalBtn = document.getElementById('externalView');
+        const cockpitOverlay = document.getElementById('cockpitOverlay');
+
+        if (isCockpit) {
+            cockpitBtn.classList.add('active');
+            externalBtn.classList.remove('active');
+            cockpitOverlay.classList.remove('hidden');
+        } else {
+            cockpitBtn.classList.remove('active');
+            externalBtn.classList.add('active');
+            cockpitOverlay.classList.add('hidden');
         }
     }
 
@@ -1848,44 +1900,30 @@ class Orgaversum {
     }
 
     setupOrbitControls() {
-        // Simple orbit controls implementation
+        // Camera controls for external view
         let isDragging = false;
         let previousMousePosition = { x: 0, y: 0 };
-        let theta = 0;
-        let phi = Math.PI / 4;
-        let radius = 500;
-
-        const updateCamera = () => {
-            if (this.isFollowingShip && this.spaceship) {
-                const offset = new THREE.Vector3(0, 100, 200);
-                this.camera.position.copy(this.spaceship.position).add(offset);
-                this.camera.lookAt(this.spaceship.position);
-            } else {
-                this.camera.position.x = radius * Math.sin(phi) * Math.cos(theta);
-                this.camera.position.y = radius * Math.cos(phi);
-                this.camera.position.z = radius * Math.sin(phi) * Math.sin(theta);
-                this.camera.lookAt(0, 0, 0);
-            }
-        };
+        this.cameraTheta = 0;
+        this.cameraPhi = Math.PI / 4;
+        this.cameraRadius = 500;
 
         this.renderer.domElement.addEventListener('mousedown', (e) => {
-            if (e.button === 0) {
+            if (e.button === 0 && !this.isCockpitView) {
                 isDragging = true;
                 previousMousePosition = { x: e.clientX, y: e.clientY };
             }
         });
 
         this.renderer.domElement.addEventListener('mousemove', (e) => {
-            if (!isDragging) return;
+            if (!isDragging || this.isCockpitView) return;
 
             const deltaX = e.clientX - previousMousePosition.x;
             const deltaY = e.clientY - previousMousePosition.y;
 
-            theta += deltaX * 0.01;
-            phi = Math.max(0.1, Math.min(Math.PI - 0.1, phi + deltaY * 0.01));
+            this.cameraTheta += deltaX * 0.01;
+            this.cameraPhi = Math.max(0.1, Math.min(Math.PI - 0.1, this.cameraPhi + deltaY * 0.01));
 
             previousMousePosition = { x: e.clientX, y: e.clientY };
-            updateCamera();
         });
 
         this.renderer.domElement.addEventListener('mouseup', () => {
@@ -1893,12 +1931,104 @@ class Orgaversum {
         });
 
         this.renderer.domElement.addEventListener('wheel', (e) => {
-            radius = Math.max(100, Math.min(2000, radius + e.deltaY));
-            updateCamera();
+            if (!this.isCockpitView) {
+                this.cameraRadius = Math.max(100, Math.min(2000, this.cameraRadius + e.deltaY));
+            }
+        });
+    }
+
+    updateShipMovement() {
+        if (!this.spaceship || this.travelPath) return;
+
+        // Rotation
+        if (this.keys.a) this.shipRotation += 0.03;
+        if (this.keys.d) this.shipRotation -= 0.03;
+
+        // Speed
+        if (this.keys.w) {
+            this.shipSpeed = Math.min(this.shipSpeed + 0.5, 15);
+        } else if (this.keys.s) {
+            this.shipSpeed = Math.max(this.shipSpeed - 0.5, -5);
+        } else {
+            // Deceleration
+            this.shipSpeed *= 0.98;
+            if (Math.abs(this.shipSpeed) < 0.1) this.shipSpeed = 0;
+        }
+
+        // Apply rotation
+        this.spaceship.rotation.y = this.shipRotation;
+
+        // Calculate direction
+        const direction = new THREE.Vector3(
+            -Math.sin(this.shipRotation),
+            0,
+            -Math.cos(this.shipRotation)
+        );
+
+        // Move spaceship
+        this.spaceship.position.add(direction.multiplyScalar(this.shipSpeed));
+
+        // Update HUD
+        const speedKms = Math.abs(this.shipSpeed * 100).toFixed(0);
+        document.getElementById('hudSpeed').textContent = `${speedKms} km/s`;
+
+        // Find nearest object and update HUD target
+        this.updateNearestTarget();
+    }
+
+    updateNearestTarget() {
+        if (!this.spaceship) return;
+
+        let nearest = null;
+        let minDist = Infinity;
+
+        this.objects3D.forEach((mesh, id) => {
+            const dist = this.spaceship.position.distanceTo(mesh.position);
+            if (dist < minDist) {
+                minDist = dist;
+                nearest = this.getObjectById(id);
+            }
         });
 
-        this.updateOrbitCamera = updateCamera;
-        updateCamera();
+        const hudTarget = document.getElementById('hudTarget');
+        if (nearest && minDist < 200) {
+            hudTarget.textContent = `${nearest.name}\n${minDist.toFixed(0)}m`;
+            hudTarget.style.color = '#34d399';
+        } else if (nearest) {
+            hudTarget.textContent = `${nearest.name}\n${minDist.toFixed(0)}m`;
+            hudTarget.style.color = '#a78bfa';
+        } else {
+            hudTarget.textContent = 'Kein Ziel';
+            hudTarget.style.color = '#a78bfa';
+        }
+    }
+
+    updateCamera() {
+        if (!this.camera || !this.spaceship) return;
+
+        if (this.isCockpitView) {
+            // First-person cockpit camera
+            const offset = new THREE.Vector3(0, 8, 0);
+            offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.shipRotation);
+
+            this.camera.position.copy(this.spaceship.position).add(offset);
+
+            // Look direction
+            const lookDir = new THREE.Vector3(
+                -Math.sin(this.shipRotation),
+                0,
+                -Math.cos(this.shipRotation)
+            );
+            const lookAt = this.camera.position.clone().add(lookDir.multiplyScalar(100));
+            this.camera.lookAt(lookAt);
+        } else {
+            // External orbit camera
+            const target = this.spaceship.position;
+            this.camera.position.x = target.x + this.cameraRadius * Math.sin(this.cameraPhi) * Math.cos(this.cameraTheta);
+            this.camera.position.y = target.y + this.cameraRadius * Math.cos(this.cameraPhi);
+            this.camera.position.z = target.z + this.cameraRadius * Math.sin(this.cameraPhi) * Math.sin(this.cameraTheta);
+            this.camera.lookAt(target);
+        }
     }
 
     on3DClick(e) {
@@ -2082,27 +2212,9 @@ class Orgaversum {
         document.getElementById('progressFill').style.width = `${totalProgress * 100}%`;
         document.getElementById('progressText').textContent = `${Math.round(totalProgress * 100)}%`;
 
-        // Follow ship if enabled
-        if (this.isFollowingShip && this.updateOrbitCamera) {
-            this.updateOrbitCamera();
-        }
-    }
-
-    resetCamera() {
-        this.isFollowingShip = false;
-        if (this.updateOrbitCamera) {
-            this.updateOrbitCamera();
-        }
-    }
-
-    toggleFollowShip() {
-        this.isFollowingShip = !this.isFollowingShip;
-        const btn = document.getElementById('followShip');
-        btn.textContent = this.isFollowingShip ? 'Freie Kamera' : 'Raumschiff folgen';
-
-        if (this.updateOrbitCamera) {
-            this.updateOrbitCamera();
-        }
+        // Update HUD during travel
+        const speedKms = Math.abs((this.travelProgress * 1500)).toFixed(0);
+        document.getElementById('hudSpeed').textContent = `${speedKms} km/s`;
     }
 
     animate3D() {
@@ -2110,8 +2222,14 @@ class Orgaversum {
 
         requestAnimationFrame(() => this.animate3D());
 
-        // Update travel
+        // Update ship movement (manual control)
+        this.updateShipMovement();
+
+        // Update travel (automatic path following)
         this.updateTravel();
+
+        // Update camera position
+        this.updateCamera();
 
         // Rotate suns
         this.suns.forEach(sun => {

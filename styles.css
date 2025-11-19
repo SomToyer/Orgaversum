@@ -264,6 +264,125 @@ body {
     background: rgba(255, 255, 255, 0.2);
 }
 
+.btn-camera.active {
+    background: rgba(16, 185, 129, 0.4);
+    border: 1px solid #10b981;
+}
+
+.control-hint {
+    margin-top: 10px;
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.5);
+    text-align: center;
+}
+
+.control-hint span {
+    color: #a78bfa;
+    font-weight: bold;
+    margin-right: 2px;
+}
+
+/* Cockpit Overlay */
+.cockpit-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 50;
+}
+
+.cockpit-overlay.hidden {
+    display: none;
+}
+
+.cockpit-frame {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.cockpit-top {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.8) 0%, transparent 100%);
+}
+
+.cockpit-bottom {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 120px;
+    background: linear-gradient(0deg, rgba(20, 20, 40, 0.9) 0%, transparent 100%);
+    border-top: 2px solid rgba(16, 185, 129, 0.3);
+}
+
+.cockpit-left,
+.cockpit-right {
+    position: absolute;
+    top: 60px;
+    bottom: 120px;
+    width: 80px;
+    background: linear-gradient(90deg, rgba(20, 20, 40, 0.6) 0%, transparent 100%);
+}
+
+.cockpit-left {
+    left: 0;
+    border-right: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.cockpit-right {
+    right: 0;
+    background: linear-gradient(-90deg, rgba(20, 20, 40, 0.6) 0%, transparent 100%);
+    border-left: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.cockpit-hud {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.hud-speed {
+    position: absolute;
+    bottom: 30px;
+    left: 30px;
+    font-family: 'Courier New', monospace;
+    font-size: 1.2rem;
+    color: #10b981;
+    text-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+}
+
+.hud-target {
+    position: absolute;
+    bottom: 30px;
+    right: 30px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    color: #a78bfa;
+    text-shadow: 0 0 10px rgba(167, 139, 250, 0.5);
+    text-align: right;
+}
+
+.hud-crosshair {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 2rem;
+    color: rgba(16, 185, 129, 0.6);
+    text-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+}
+
 .connect-indicator {
     margin-left: auto;
     padding: 8px 16px;

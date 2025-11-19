@@ -52,8 +52,27 @@
                 </div>
             </div>
             <div class="camera-controls">
-                <button id="resetCamera" class="btn btn-camera">Kamera zurücksetzen</button>
-                <button id="followShip" class="btn btn-camera">Raumschiff folgen</button>
+                <button id="cockpitView" class="btn btn-camera active">Cockpit</button>
+                <button id="externalView" class="btn btn-camera">Extern</button>
+            </div>
+            <div class="control-hint">
+                <span>W/S</span> Vorwärts/Zurück
+                <span>A/D</span> Links/Rechts
+            </div>
+        </div>
+
+        <!-- Cockpit Overlay -->
+        <div id="cockpitOverlay" class="cockpit-overlay hidden">
+            <div class="cockpit-frame">
+                <div class="cockpit-top"></div>
+                <div class="cockpit-left"></div>
+                <div class="cockpit-right"></div>
+                <div class="cockpit-bottom"></div>
+            </div>
+            <div class="cockpit-hud">
+                <div class="hud-speed" id="hudSpeed">0 km/s</div>
+                <div class="hud-target" id="hudTarget">Kein Ziel</div>
+                <div class="hud-crosshair">+</div>
             </div>
         </div>
 
