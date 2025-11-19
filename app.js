@@ -148,6 +148,11 @@ class Orgaversum {
         // Preview Modal
         document.getElementById('previewClose').addEventListener('click', () => this.hidePreviewModal());
         document.getElementById('previewDelete').addEventListener('click', () => this.deleteStation());
+
+        // Retro Computer Toggle
+        document.getElementById('toggleRetro').addEventListener('click', () => {
+            document.getElementById('retroComputer').classList.toggle('minimized');
+        });
     }
 
     // Mouse/Touch Handlers
@@ -1332,6 +1337,185 @@ class Orgaversum {
         return `rgb(${R}, ${G}, ${B})`;
     }
 
+    // Retro List View
+    updateRetroList() {
+        const container = document.getElementById('retroList');
+        if (!container) return;
+
+        // Check if there are any objects
+        if (this.suns.length === 0 && this.planets.length === 0 && this.moons.length === 0) {
+            container.innerHTML = '<div class="retro-empty">Keine Objekte vorhanden</div>';
+            return;
+        }
+
+        let html = '';
+
+        // Render suns
+        this.suns.forEach(sun => {
+            html += this.renderRetroItem(sun, 'sun', '☀');
+        });
+
+        // Render planets
+        this.planets.forEach(planet => {
+            html += this.renderRetroItem(planet, 'planet', '●');
+        });
+
+        // Render moons with their stations
+        this.moons.forEach(moon => {
+            html += this.renderRetroMoon(moon);
+        });
+
+        container.innerHTML = html;
+
+        // Attach event listeners
+        this.attachRetroListeners();
+    }
+
+    renderRetroItem(obj, type, icon) {
+        return `
+            <div class="retro-item retro-${type}" data-id="${obj.id}" data-type="${type}">
+                <div class="retro-item-header">
+                    <span class="retro-item-icon">${icon}</span>
+                    <span class="retro-item-name">${obj.name}</span>
+                    <div class="retro-item-actions">
+                        <button class="retro-action retro-focus" title="Fokus">◎</button>
+                        <button class="retro-action retro-edit" title="Bearbeiten">✎</button>
+                        <button class="retro-action retro-delete" title="Löschen">×</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    renderRetroMoon(moon) {
+        let html = `
+            <div class="retro-item retro-moon" data-id="${moon.id}" data-type="moon">
+                <div class="retro-item-header">
+                    <span class="retro-item-icon">◐</span>
+                    <span class="retro-item-name">${moon.name}</span>
+                    <div class="retro-item-actions">
+                        <button class="retro-action retro-focus" title="Fokus">◎</button>
+                        <button class="retro-action retro-edit" title="Bearbeiten">✎</button>
+                        <button class="retro-action retro-delete" title="Löschen">×</button>
+                    </div>
+                </div>
+        `;
+
+        // Render stations if any
+        if (moon.stations && moon.stations.length > 0) {
+            html += '<div class="retro-children">';
+            moon.stations.forEach(station => {
+                const stationIcons = { image: '▣', video: '▶', audio: '♪', note: '✉' };
+                html += `
+                    <div class="retro-item retro-station" data-id="${station.id}" data-moon-id="${moon.id}" data-type="station">
+                        <div class="retro-item-header">
+                            <span class="retro-item-icon">${stationIcons[station.type] || '◆'}</span>
+                            <span class="retro-item-name">${station.name}</span>
+                            <div class="retro-item-actions">
+                                <button class="retro-action retro-view" title="Ansehen">👁</button>
+                                <button class="retro-action retro-delete" title="Löschen">×</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+        }
+
+        html += '</div>';
+        return html;
+    }
+
+    attachRetroListeners() {
+        const container = document.getElementById('retroList');
+        if (!container) return;
+
+        // Focus buttons
+        container.querySelectorAll('.retro-focus').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const item = btn.closest('.retro-item');
+                const id = parseInt(item.dataset.id);
+                this.focusOnObject(id);
+            });
+        });
+
+        // Edit buttons
+        container.querySelectorAll('.retro-edit').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const item = btn.closest('.retro-item');
+                const id = parseInt(item.dataset.id);
+                const obj = this.getObjectById(id);
+                if (obj) this.showEditModal(obj);
+            });
+        });
+
+        // Delete buttons
+        container.querySelectorAll('.retro-delete').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const item = btn.closest('.retro-item');
+                const id = parseInt(item.dataset.id);
+                const type = item.dataset.type;
+
+                if (type === 'station') {
+                    const moonId = parseInt(item.dataset.moonId);
+                    const moon = this.moons.find(m => m.id === moonId);
+                    if (moon) {
+                        moon.stations = moon.stations.filter(s => s.id !== id);
+                        this.saveData();
+                    }
+                } else {
+                    this.suns = this.suns.filter(s => s.id !== id);
+                    this.planets = this.planets.filter(p => p.id !== id);
+                    this.moons = this.moons.filter(m => m.id !== id);
+                    this.connections = this.connections.filter(c => c.from !== id && c.to !== id);
+                    this.saveData();
+                }
+            });
+        });
+
+        // View station buttons
+        container.querySelectorAll('.retro-view').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const item = btn.closest('.retro-item');
+                const id = parseInt(item.dataset.id);
+                const moonId = parseInt(item.dataset.moonId);
+                const moon = this.moons.find(m => m.id === moonId);
+                if (moon) {
+                    const station = moon.stations.find(s => s.id === id);
+                    if (station) this.showPreviewModal(moon, station);
+                }
+            });
+        });
+
+        // Click on item header to focus
+        container.querySelectorAll('.retro-item-header').forEach(header => {
+            header.addEventListener('click', () => {
+                const item = header.closest('.retro-item');
+                const type = item.dataset.type;
+                if (type !== 'station') {
+                    const id = parseInt(item.dataset.id);
+                    this.focusOnObject(id);
+                }
+            });
+        });
+    }
+
+    focusOnObject(id) {
+        const obj = this.getObjectById(id);
+        if (!obj) return;
+
+        // Center view on object
+        this.offsetX = this.canvas.width / 2 - obj.x * this.scale;
+        this.offsetY = this.canvas.height / 2 - obj.y * this.scale;
+
+        // Highlight effect
+        this.createParticles(obj.x, obj.y, 20);
+    }
+
     // Data persistence
     saveData() {
         const data = {
@@ -1342,6 +1526,9 @@ class Orgaversum {
             nextId: this.nextId
         };
         localStorage.setItem('orgaversum', JSON.stringify(data));
+
+        // Update retro list
+        this.updateRetroList();
     }
 
     loadData() {
@@ -1358,6 +1545,9 @@ class Orgaversum {
                 console.error('Failed to load data:', e);
             }
         }
+
+        // Update retro list after loading
+        this.updateRetroList();
     }
 }
 
