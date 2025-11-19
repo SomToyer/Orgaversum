@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Orgaversum - Todo Planeten Abenteuer</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
     <div id="app">
@@ -27,11 +28,34 @@
                     <span class="icon">🗑</span> Leeren
                 </button>
             </div>
+            <button id="toggle3D" class="btn btn-3d">
+                <span class="icon">🚀</span> 3D Ansicht
+            </button>
             <div id="connectMode" class="connect-indicator hidden">
                 Verbindungsmodus aktiv - Klicke zwei Objekte
             </div>
         </div>
         <canvas id="universe"></canvas>
+        <div id="universe3D" class="hidden"></div>
+
+        <!-- 3D Controls -->
+        <div id="controls3D" class="controls-3d hidden">
+            <div class="spaceship-controls">
+                <div class="control-label">Raumschiff Steuerung</div>
+                <div class="target-info" id="targetInfo">Kein Ziel ausgewählt</div>
+                <button id="startTravel" class="btn btn-travel" disabled>Reise starten</button>
+                <div class="travel-progress hidden" id="travelProgress">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <span class="progress-text" id="progressText">0%</span>
+                </div>
+            </div>
+            <div class="camera-controls">
+                <button id="resetCamera" class="btn btn-camera">Kamera zurücksetzen</button>
+                <button id="followShip" class="btn btn-camera">Raumschiff folgen</button>
+            </div>
+        </div>
 
         <!-- Modal für Namen -->
         <div id="modal" class="modal hidden">
