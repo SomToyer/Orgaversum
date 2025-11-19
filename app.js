@@ -6,10 +6,14 @@ class Orgaversum {
         this.ctx = this.canvas.getContext('2d');
 
         // Data
+        this.suns = [];
         this.planets = [];
         this.moons = [];
         this.connections = [];
         this.nextId = 1;
+
+        // Image cache for thumbnails
+        this.imageCache = new Map();
 
         // Interaction state
         this.dragging = null;
@@ -71,13 +75,18 @@ class Orgaversum {
         this.canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
         this.canvas.addEventListener('mouseup', () => this.onMouseUp());
         this.canvas.addEventListener('dblclick', (e) => this.onDoubleClick(e));
+        this.canvas.addEventListener('contextmenu', (e) => this.onRightClick(e));
 
         // Touch events
         this.canvas.addEventListener('touchstart', (e) => this.onTouchStart(e));
         this.canvas.addEventListener('touchmove', (e) => this.onTouchMove(e));
         this.canvas.addEventListener('touchend', () => this.onMouseUp());
 
+        // Paste event for screenshots
+        document.addEventListener('paste', (e) => this.onPaste(e));
+
         // Buttons
+        document.getElementById('addSun').addEventListener('click', () => this.showModal('sun'));
         document.getElementById('addPlanet').addEventListener('click', () => this.showModal('planet'));
         document.getElementById('addMoon').addEventListener('click', () => this.showModal('moon'));
         document.getElementById('toggleConnect').addEventListener('click', () => this.toggleConnectMode());
@@ -186,6 +195,67 @@ class Orgaversum {
         }
     }
 
+    onRightClick(e) {
+        e.preventDefault();
+        const pos = this.getMousePos(e);
+
+        // Check if clicking on a connection to delete it
+        const connection = this.getConnectionAt(pos.x, pos.y);
+        if (connection) {
+            this.connections = this.connections.filter(c => c !== connection);
+            this.createParticles(pos.x, pos.y, 15);
+            this.saveData();
+        }
+    }
+
+    onPaste(e) {
+        // Only handle paste when station modal is open for images
+        const stationModal = document.getElementById('stationModal');
+        if (stationModal.classList.contains('hidden')) return;
+        if (this.currentStationType !== 'image') return;
+
+        const items = e.clipboardData.items;
+        for (const item of items) {
+            if (item.type.startsWith('image/')) {
+                const file = item.getAsFile();
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    this.currentStationFile = event.target.result;
+                    const uploadArea = document.getElementById('fileUploadArea');
+                    uploadArea.classList.add('has-file');
+                    uploadArea.querySelector('p').textContent = 'Screenshot eingefügt';
+                };
+                reader.readAsDataURL(file);
+                break;
+            }
+        }
+    }
+
+    getConnectionAt(x, y) {
+        const threshold = 10;
+        for (const conn of this.connections) {
+            const from = this.getObjectById(conn.from);
+            const to = this.getObjectById(conn.to);
+            if (!from || !to) continue;
+
+            // Calculate distance from point to line segment
+            const dx = to.x - from.x;
+            const dy = to.y - from.y;
+            const len = Math.hypot(dx, dy);
+            if (len === 0) continue;
+
+            const t = Math.max(0, Math.min(1, ((x - from.x) * dx + (y - from.y) * dy) / (len * len)));
+            const nearestX = from.x + t * dx;
+            const nearestY = from.y + t * dy;
+            const dist = Math.hypot(x - nearestX, y - nearestY);
+
+            if (dist <= threshold) {
+                return conn;
+            }
+        }
+        return null;
+    }
+
     onTouchStart(e) {
         e.preventDefault();
         const touch = e.touches[0];
@@ -209,7 +279,7 @@ class Orgaversum {
     }
 
     getObjectAt(x, y) {
-        // Check moons first (smaller, on top)
+        // Check moons first (smallest, on top)
         for (const moon of this.moons) {
             const dist = Math.hypot(x - moon.x, y - moon.y);
             if (dist <= moon.radius) return moon;
@@ -219,6 +289,12 @@ class Orgaversum {
         for (const planet of this.planets) {
             const dist = Math.hypot(x - planet.x, y - planet.y);
             if (dist <= planet.radius) return planet;
+        }
+
+        // Then suns (largest, on bottom)
+        for (const sun of this.suns) {
+            const dist = Math.hypot(x - sun.x, y - sun.y);
+            if (dist <= sun.radius) return sun;
         }
 
         return null;
@@ -307,7 +383,12 @@ class Orgaversum {
         const title = document.getElementById('modalTitle');
         const input = document.getElementById('nameInput');
 
-        title.textContent = type === 'planet' ? 'Neuer Planet' : 'Neuer Mond';
+        const titles = {
+            sun: 'Neue Sonne',
+            planet: 'Neuer Planet',
+            moon: 'Neuer Mond'
+        };
+        title.textContent = titles[type] || 'Neu';
         input.value = '';
         modal.classList.remove('hidden');
         input.focus();
@@ -321,7 +402,9 @@ class Orgaversum {
         const name = document.getElementById('nameInput').value.trim();
         if (!name) return;
 
-        if (this.modalType === 'planet') {
+        if (this.modalType === 'sun') {
+            this.addSun(name);
+        } else if (this.modalType === 'planet') {
             this.addPlanet(name);
         } else {
             this.addMoon(name);
@@ -371,7 +454,8 @@ class Orgaversum {
 
         const id = this.editingObj.id;
 
-        // Remove from planets or moons
+        // Remove from suns, planets or moons
+        this.suns = this.suns.filter(s => s.id !== id);
         this.planets = this.planets.filter(p => p.id !== id);
         this.moons = this.moons.filter(m => m.id !== id);
 
@@ -384,6 +468,29 @@ class Orgaversum {
     }
 
     // Create objects
+    addSun(name) {
+        const sunColors = [
+            { main: '#fbbf24', glow: 'rgba(251, 191, 36, 0.4)' },
+            { main: '#f59e0b', glow: 'rgba(245, 158, 11, 0.4)' },
+            { main: '#fb923c', glow: 'rgba(251, 146, 60, 0.4)' },
+        ];
+        const color = sunColors[Math.floor(Math.random() * sunColors.length)];
+        const sun = {
+            id: this.nextId++,
+            type: 'sun',
+            name: name,
+            x: 150 + Math.random() * (this.canvas.width - 300),
+            y: 150 + Math.random() * (this.canvas.height - 300),
+            radius: 60 + Math.random() * 30,
+            color: color,
+            pulsePhase: Math.random() * Math.PI * 2
+        };
+
+        this.suns.push(sun);
+        this.createParticles(sun.x, sun.y, 40);
+        this.saveData();
+    }
+
     addPlanet(name) {
         const color = this.planetColors[Math.floor(Math.random() * this.planetColors.length)];
         const planet = {
@@ -585,14 +692,15 @@ class Orgaversum {
     }
 
     clearAll() {
-        if (this.planets.length === 0 && this.moons.length === 0) return;
+        if (this.suns.length === 0 && this.planets.length === 0 && this.moons.length === 0) return;
 
         if (confirm('Wirklich alles löschen?')) {
             // Create particles for all objects
-            [...this.planets, ...this.moons].forEach(obj => {
+            [...this.suns, ...this.planets, ...this.moons].forEach(obj => {
                 this.createParticles(obj.x, obj.y, 15);
             });
 
+            this.suns = [];
             this.planets = [];
             this.moons = [];
             this.connections = [];
@@ -653,6 +761,9 @@ class Orgaversum {
             this.ctx.setLineDash([]);
         }
 
+        // Draw suns (largest, background)
+        this.suns.forEach(sun => this.drawSun(sun));
+
         // Draw planets
         this.planets.forEach(planet => this.drawPlanet(planet));
 
@@ -661,6 +772,80 @@ class Orgaversum {
 
         // Draw particles
         this.drawParticles();
+    }
+
+    drawSun(sun) {
+        const ctx = this.ctx;
+        const isHovered = this.hovering === sun;
+        const isConnecting = this.connectFirst === sun;
+
+        // Pulsing effect
+        const pulse = Math.sin(this.time * 2 + sun.pulsePhase) * 0.1 + 1;
+
+        // Outer glow (corona)
+        const coronaSize = sun.radius * 0.8;
+        for (let i = 3; i >= 0; i--) {
+            const gradient = ctx.createRadialGradient(
+                sun.x, sun.y, sun.radius * 0.5,
+                sun.x, sun.y, sun.radius + coronaSize * (i + 1) * 0.3 * pulse
+            );
+            gradient.addColorStop(0, `rgba(255, 200, 50, ${0.3 - i * 0.07})`);
+            gradient.addColorStop(1, 'transparent');
+
+            ctx.beginPath();
+            ctx.arc(sun.x, sun.y, sun.radius + coronaSize * (i + 1) * 0.3 * pulse, 0, Math.PI * 2);
+            ctx.fillStyle = gradient;
+            ctx.fill();
+        }
+
+        // Sun body
+        const bodyGradient = ctx.createRadialGradient(
+            sun.x - sun.radius * 0.2, sun.y - sun.radius * 0.2, 0,
+            sun.x, sun.y, sun.radius
+        );
+        bodyGradient.addColorStop(0, '#fff5e0');
+        bodyGradient.addColorStop(0.3, sun.color.main);
+        bodyGradient.addColorStop(0.7, this.darkenColor(sun.color.main, 10));
+        bodyGradient.addColorStop(1, this.darkenColor(sun.color.main, 30));
+
+        ctx.beginPath();
+        ctx.arc(sun.x, sun.y, sun.radius, 0, Math.PI * 2);
+        ctx.fillStyle = bodyGradient;
+        ctx.fill();
+
+        // Solar flares
+        ctx.save();
+        ctx.translate(sun.x, sun.y);
+        for (let i = 0; i < 8; i++) {
+            const angle = (Math.PI * 2 / 8) * i + this.time * 0.2;
+            const flareLength = sun.radius * 0.3 * (Math.sin(this.time * 3 + i) * 0.3 + 0.7);
+
+            ctx.beginPath();
+            ctx.moveTo(
+                Math.cos(angle) * sun.radius * 0.9,
+                Math.sin(angle) * sun.radius * 0.9
+            );
+            ctx.lineTo(
+                Math.cos(angle) * (sun.radius + flareLength),
+                Math.sin(angle) * (sun.radius + flareLength)
+            );
+            ctx.strokeStyle = `rgba(255, 200, 100, ${0.5 + Math.sin(this.time * 3 + i) * 0.3})`;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        // Highlight if hovered or connecting
+        if (isHovered || isConnecting) {
+            ctx.beginPath();
+            ctx.arc(sun.x, sun.y, sun.radius + 8, 0, Math.PI * 2);
+            ctx.strokeStyle = isConnecting ? '#f59e0b' : '#fff';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+        }
+
+        // Name
+        this.drawLabel(sun);
     }
 
     drawConnections() {
@@ -883,54 +1068,6 @@ class Orgaversum {
             ctx.fillStyle = gradient;
             ctx.fill();
 
-            // Station body (different shapes for different types)
-            ctx.save();
-            ctx.translate(pos.x, pos.y);
-
-            // Color based on type
-            const colors = {
-                image: '#10b981',
-                video: '#f59e0b',
-                audio: '#6366f1',
-                note: '#ec4899'
-            };
-            const color = colors[station.type] || '#fff';
-
-            // Draw station shape
-            ctx.beginPath();
-            if (station.type === 'image') {
-                // Square for images
-                ctx.rect(-5, -5, 10, 10);
-            } else if (station.type === 'video') {
-                // Triangle for video
-                ctx.moveTo(0, -6);
-                ctx.lineTo(6, 4);
-                ctx.lineTo(-6, 4);
-                ctx.closePath();
-            } else if (station.type === 'audio') {
-                // Circle for audio
-                ctx.arc(0, 0, 5, 0, Math.PI * 2);
-            } else {
-                // Diamond for notes
-                ctx.moveTo(0, -6);
-                ctx.lineTo(6, 0);
-                ctx.lineTo(0, 6);
-                ctx.lineTo(-6, 0);
-                ctx.closePath();
-            }
-
-            ctx.fillStyle = color;
-            ctx.fill();
-
-            // Hover effect
-            if (isHovered) {
-                ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-            }
-
-            ctx.restore();
-
             // Draw connecting line to moon
             ctx.beginPath();
             ctx.moveTo(moon.x, moon.y);
@@ -938,12 +1075,93 @@ class Orgaversum {
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
             ctx.lineWidth = 1;
             ctx.stroke();
+
+            // Station body
+            ctx.save();
+            ctx.translate(pos.x, pos.y);
+
+            if (station.type === 'image') {
+                // Draw image thumbnail
+                const size = 16;
+                let img = this.imageCache.get(station.id);
+
+                if (!img) {
+                    img = new Image();
+                    img.src = station.data;
+                    this.imageCache.set(station.id, img);
+                }
+
+                if (img.complete && img.naturalWidth > 0) {
+                    // Clip to circle
+                    ctx.beginPath();
+                    ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
+                    ctx.clip();
+                    ctx.drawImage(img, -size / 2, -size / 2, size, size);
+                    ctx.restore();
+                    ctx.save();
+                    ctx.translate(pos.x, pos.y);
+                } else {
+                    // Fallback while loading
+                    ctx.beginPath();
+                    ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
+                    ctx.fillStyle = '#10b981';
+                    ctx.fill();
+                }
+
+                // Border
+                ctx.beginPath();
+                ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
+                ctx.strokeStyle = isHovered ? '#fff' : 'rgba(255, 255, 255, 0.5)';
+                ctx.lineWidth = isHovered ? 2 : 1;
+                ctx.stroke();
+            } else {
+                // Color based on type
+                const colors = {
+                    video: '#f59e0b',
+                    audio: '#6366f1',
+                    note: '#ec4899'
+                };
+                const color = colors[station.type] || '#fff';
+
+                // Draw station shape
+                ctx.beginPath();
+                if (station.type === 'video') {
+                    // Triangle for video
+                    ctx.moveTo(0, -6);
+                    ctx.lineTo(6, 4);
+                    ctx.lineTo(-6, 4);
+                    ctx.closePath();
+                } else if (station.type === 'audio') {
+                    // Circle for audio
+                    ctx.arc(0, 0, 5, 0, Math.PI * 2);
+                } else {
+                    // Diamond for notes
+                    ctx.moveTo(0, -6);
+                    ctx.lineTo(6, 0);
+                    ctx.lineTo(0, 6);
+                    ctx.lineTo(-6, 0);
+                    ctx.closePath();
+                }
+
+                ctx.fillStyle = color;
+                ctx.fill();
+
+                // Hover effect
+                if (isHovered) {
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            }
+
+            ctx.restore();
         });
     }
 
     drawLabel(obj) {
         const ctx = this.ctx;
-        const fontSize = obj.type === 'planet' ? 12 : 10;
+        const fontSizes = { sun: 14, planet: 12, moon: 10 };
+        const fontSize = fontSizes[obj.type] || 10;
 
         ctx.font = `${fontSize}px 'Segoe UI', sans-serif`;
         ctx.textAlign = 'center';
@@ -981,7 +1199,9 @@ class Orgaversum {
 
     // Helpers
     getObjectById(id) {
-        return this.planets.find(p => p.id === id) || this.moons.find(m => m.id === id);
+        return this.suns.find(s => s.id === id) ||
+               this.planets.find(p => p.id === id) ||
+               this.moons.find(m => m.id === id);
     }
 
     lightenColor(hex, percent) {
@@ -1005,6 +1225,7 @@ class Orgaversum {
     // Data persistence
     saveData() {
         const data = {
+            suns: this.suns,
             planets: this.planets,
             moons: this.moons,
             connections: this.connections,
@@ -1018,6 +1239,7 @@ class Orgaversum {
         if (saved) {
             try {
                 const data = JSON.parse(saved);
+                this.suns = data.suns || [];
                 this.planets = data.planets || [];
                 this.moons = data.moons || [];
                 this.connections = data.connections || [];
