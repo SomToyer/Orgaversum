@@ -23,6 +23,13 @@ class Orgaversum {
         this.connectFirst = null;
         this.mousePos = { x: 0, y: 0 };
 
+        // Zoom and pan state
+        this.scale = 1;
+        this.offsetX = 0;
+        this.offsetY = 0;
+        this.isPanning = false;
+        this.lastPanPos = { x: 0, y: 0 };
+
         // Station state
         this.currentStationType = null;
         this.currentStationFile = null;
@@ -76,6 +83,7 @@ class Orgaversum {
         this.canvas.addEventListener('mouseup', () => this.onMouseUp());
         this.canvas.addEventListener('dblclick', (e) => this.onDoubleClick(e));
         this.canvas.addEventListener('contextmenu', (e) => this.onRightClick(e));
+        this.canvas.addEventListener('wheel', (e) => this.onWheel(e));
 
         // Touch events
         this.canvas.addEventListener('touchstart', (e) => this.onTouchStart(e));
@@ -144,6 +152,18 @@ class Orgaversum {
 
     // Mouse/Touch Handlers
     onMouseDown(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
+
+        // Middle mouse button or space key for panning
+        if (e.button === 1) {
+            e.preventDefault();
+            this.isPanning = true;
+            this.lastPanPos = { x: screenX, y: screenY };
+            return;
+        }
+
         const pos = this.getMousePos(e);
 
         // Check for station click first
@@ -161,10 +181,26 @@ class Orgaversum {
             this.dragging = obj;
             this.dragging.offsetX = pos.x - obj.x;
             this.dragging.offsetY = pos.y - obj.y;
+        } else {
+            // Pan when clicking on empty space
+            this.isPanning = true;
+            this.lastPanPos = { x: screenX, y: screenY };
         }
     }
 
     onMouseMove(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
+
+        if (this.isPanning) {
+            this.offsetX += screenX - this.lastPanPos.x;
+            this.offsetY += screenY - this.lastPanPos.y;
+            this.lastPanPos = { x: screenX, y: screenY };
+            this.canvas.style.cursor = 'grabbing';
+            return;
+        }
+
         const pos = this.getMousePos(e);
         this.mousePos = pos;
 
@@ -184,6 +220,7 @@ class Orgaversum {
 
     onMouseUp() {
         this.dragging = null;
+        this.isPanning = false;
     }
 
     onDoubleClick(e) {
@@ -272,10 +309,43 @@ class Orgaversum {
 
     getMousePos(e) {
         const rect = this.canvas.getBoundingClientRect();
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
+
+        // Transform screen coordinates to world coordinates
         return {
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top
+            x: (screenX - this.offsetX) / this.scale,
+            y: (screenY - this.offsetY) / this.scale
         };
+    }
+
+    getScreenPos(worldX, worldY) {
+        return {
+            x: worldX * this.scale + this.offsetX,
+            y: worldY * this.scale + this.offsetY
+        };
+    }
+
+    onWheel(e) {
+        e.preventDefault();
+
+        const rect = this.canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        // Zoom factor
+        const zoomIntensity = 0.1;
+        const delta = e.deltaY > 0 ? -zoomIntensity : zoomIntensity;
+        const newScale = Math.max(0.1, Math.min(5, this.scale * (1 + delta)));
+
+        // Zoom towards mouse position
+        const worldX = (mouseX - this.offsetX) / this.scale;
+        const worldY = (mouseY - this.offsetY) / this.scale;
+
+        this.scale = newScale;
+
+        this.offsetX = mouseX - worldX * this.scale;
+        this.offsetY = mouseY - worldY * this.scale;
     }
 
     getObjectAt(x, y) {
@@ -746,6 +816,11 @@ class Orgaversum {
     draw() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
+        // Apply zoom transformation
+        this.ctx.save();
+        this.ctx.translate(this.offsetX, this.offsetY);
+        this.ctx.scale(this.scale, this.scale);
+
         // Draw connections
         this.drawConnections();
 
@@ -755,8 +830,8 @@ class Orgaversum {
             this.ctx.moveTo(this.connectFirst.x, this.connectFirst.y);
             this.ctx.lineTo(this.mousePos.x, this.mousePos.y);
             this.ctx.strokeStyle = 'rgba(245, 158, 11, 0.5)';
-            this.ctx.lineWidth = 2;
-            this.ctx.setLineDash([5, 5]);
+            this.ctx.lineWidth = 2 / this.scale;
+            this.ctx.setLineDash([5 / this.scale, 5 / this.scale]);
             this.ctx.stroke();
             this.ctx.setLineDash([]);
         }
@@ -772,6 +847,41 @@ class Orgaversum {
 
         // Draw particles
         this.drawParticles();
+
+        // Restore transformation
+        this.ctx.restore();
+
+        // Draw zoom indicator (in screen space)
+        this.drawZoomIndicator();
+    }
+
+    drawZoomIndicator() {
+        if (this.scale === 1) return;
+
+        const ctx = this.ctx;
+        const text = `${Math.round(this.scale * 100)}%`;
+
+        ctx.font = '12px "Segoe UI", sans-serif';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+
+        const padding = 8;
+        const x = this.canvas.width - 20;
+        const y = this.canvas.height - 20;
+
+        // Background
+        const metrics = ctx.measureText(text);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(
+            x - metrics.width - padding,
+            y - 14 - padding / 2,
+            metrics.width + padding * 2,
+            14 + padding
+        );
+
+        // Text
+        ctx.fillStyle = '#fff';
+        ctx.fillText(text, x, y);
     }
 
     drawSun(sun) {
