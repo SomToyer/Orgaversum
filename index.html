@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orgaversum - Todo Planeten Abenteuer</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <div id="toolbar">
+            <h1>Orgaversum</h1>
+            <div class="toolbar-buttons">
+                <button id="addPlanet" class="btn btn-planet">
+                    <span class="icon">+</span> Planet
+                </button>
+                <button id="addMoon" class="btn btn-moon">
+                    <span class="icon">+</span> Mond
+                </button>
+                <button id="toggleConnect" class="btn btn-connect">
+                    <span class="icon">🔗</span> Verbinden
+                </button>
+                <button id="clearAll" class="btn btn-clear">
+                    <span class="icon">🗑</span> Leeren
+                </button>
+            </div>
+            <div id="connectMode" class="connect-indicator hidden">
+                Verbindungsmodus aktiv - Klicke zwei Objekte
+            </div>
+        </div>
+        <canvas id="universe"></canvas>
+
+        <!-- Modal für Namen -->
+        <div id="modal" class="modal hidden">
+            <div class="modal-content">
+                <h2 id="modalTitle">Neuer Planet</h2>
+                <input type="text" id="nameInput" placeholder="Name eingeben..." autofocus>
+                <div class="modal-buttons">
+                    <button id="modalCancel" class="btn btn-cancel">Abbrechen</button>
+                    <button id="modalConfirm" class="btn btn-confirm">Erstellen</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Modal -->
+        <div id="editModal" class="modal hidden">
+            <div class="modal-content">
+                <h2>Bearbeiten</h2>
+                <input type="text" id="editNameInput" placeholder="Name bearbeiten...">
+                <div class="modal-buttons">
+                    <button id="editDelete" class="btn btn-delete">Löschen</button>
+                    <button id="editCancel" class="btn btn-cancel">Abbrechen</button>
+                    <button id="editConfirm" class="btn btn-confirm">Speichern</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
