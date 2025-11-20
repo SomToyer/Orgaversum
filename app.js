@@ -1712,6 +1712,36 @@ class Orgaversum {
         }
         return null;
     }
+
+    // Data persistence
+    saveData() {
+        const data = {
+            suns: this.suns,
+            planets: this.planets,
+            moons: this.moons,
+            connections: this.connections,
+            nextId: this.nextId
+        };
+        localStorage.setItem('orgaversum', JSON.stringify(data));
+        this.updateRetroList();
+    }
+
+    loadData() {
+        const saved = localStorage.getItem('orgaversum');
+        if (saved) {
+            try {
+                const data = JSON.parse(saved);
+                this.suns = data.suns || [];
+                this.planets = data.planets || [];
+                this.moons = data.moons || [];
+                this.connections = data.connections || [];
+                this.nextId = data.nextId || 1;
+            } catch (e) {
+                console.error('Failed to load data:', e);
+            }
+        }
+        this.updateRetroList();
+    }
 }
 
 // Initialize the application
