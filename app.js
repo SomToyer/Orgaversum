@@ -29,6 +29,7 @@ class Orgaversum {
         this.offsetY = 0;
         this.isPanning = false;
         this.lastPanPos = { x: 0, y: 0 };
+        this.galaxyView = false;
 
         // Station state
         this.currentStationType = null;
@@ -409,7 +410,7 @@ class Orgaversum {
         // Zoom factor
         const zoomIntensity = 0.1;
         const delta = e.deltaY > 0 ? -zoomIntensity : zoomIntensity;
-        const newScale = Math.max(0.1, Math.min(5, this.scale * (1 + delta)));
+        const newScale = Math.max(0.05, Math.min(5, this.scale * (1 + delta)));
 
         // Zoom towards mouse position
         const worldX = (mouseX - this.offsetX) / this.scale;
@@ -419,6 +420,9 @@ class Orgaversum {
 
         this.offsetX = mouseX - worldX * this.scale;
         this.offsetY = mouseY - worldY * this.scale;
+
+        // Activate galaxy view when zoomed out far enough
+        this.galaxyView = this.scale < 0.15;
     }
 
     getObjectAt(x, y) {
@@ -1072,50 +1076,58 @@ class Orgaversum {
         this.ctx.translate(this.offsetX, this.offsetY);
         this.ctx.scale(this.scale, this.scale);
 
-        // Draw connections
-        this.drawConnections();
+        if (this.galaxyView) {
+            // Galaxy view: only draw suns
+            this.suns.forEach(sun => this.drawSun(sun));
+        } else {
+            // Normal view: draw everything
+            // Draw connections
+            this.drawConnections();
 
-        // Draw connect preview line
-        if (this.connectMode && this.connectFirst) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.connectFirst.x, this.connectFirst.y);
-            this.ctx.lineTo(this.mousePos.x, this.mousePos.y);
-            this.ctx.strokeStyle = 'rgba(245, 158, 11, 0.5)';
-            this.ctx.lineWidth = 2 / this.scale;
-            this.ctx.setLineDash([5 / this.scale, 5 / this.scale]);
-            this.ctx.stroke();
-            this.ctx.setLineDash([]);
+            // Draw connect preview line
+            if (this.connectMode && this.connectFirst) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(this.connectFirst.x, this.connectFirst.y);
+                this.ctx.lineTo(this.mousePos.x, this.mousePos.y);
+                this.ctx.strokeStyle = 'rgba(245, 158, 11, 0.5)';
+                this.ctx.lineWidth = 2 / this.scale;
+                this.ctx.setLineDash([5 / this.scale, 5 / this.scale]);
+                this.ctx.stroke();
+                this.ctx.setLineDash([]);
+            }
+
+            // Draw suns (largest, background)
+            this.suns.forEach(sun => this.drawSun(sun));
+
+            // Draw planets
+            this.planets.forEach(planet => this.drawPlanet(planet));
+
+            // Draw moons
+            this.moons.forEach(moon => this.drawMoon(moon));
+
+            // Draw particles
+            this.drawParticles();
         }
-
-        // Draw suns (largest, background)
-        this.suns.forEach(sun => this.drawSun(sun));
-
-        // Draw planets
-        this.planets.forEach(planet => this.drawPlanet(planet));
-
-        // Draw moons
-        this.moons.forEach(moon => this.drawMoon(moon));
-
-        // Draw particles
-        this.drawParticles();
 
         // Restore transformation
         this.ctx.restore();
 
-        // Draw flying rockets (in screen space)
-        this.drawFlyingRockets();
+        if (!this.galaxyView) {
+            // Draw flying rockets (in screen space) - only in normal view
+            this.drawFlyingRockets();
+        }
 
         // Draw zoom indicator (in screen space)
         this.drawZoomIndicator();
     }
 
     drawZoomIndicator() {
-        if (this.scale === 1) return;
+        if (this.scale === 1 && !this.galaxyView) return;
 
         const ctx = this.ctx;
-        const text = `${Math.round(this.scale * 100)}%`;
+        const text = this.galaxyView ? '🌌 Galaxyansicht' : `${Math.round(this.scale * 100)}%`;
 
-        ctx.font = '12px "Segoe UI", sans-serif';
+        ctx.font = this.galaxyView ? 'bold 14px "Segoe UI", sans-serif' : '12px "Segoe UI", sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'bottom';
 
@@ -1125,7 +1137,7 @@ class Orgaversum {
 
         // Background
         const metrics = ctx.measureText(text);
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillStyle = this.galaxyView ? 'rgba(99, 102, 241, 0.8)' : 'rgba(0, 0, 0, 0.6)';
         ctx.fillRect(
             x - metrics.width - padding,
             y - 14 - padding / 2,
