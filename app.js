@@ -44,6 +44,7 @@ class Orgaversum {
         this.selectedRocket = null;
         this.flyingRockets = [];
         this.rocketTarget = null;
+        this.statusModalMoon = null;
 
         // Drag and drop state
         this.draggedFile = null;
@@ -168,6 +169,11 @@ class Orgaversum {
             rocket.addEventListener('click', () => this.selectRocket(rocket));
         });
 
+        // Rocket Status Modal
+        document.getElementById('statusTerraformed').addEventListener('click', () => this.setRocketStatus('terraformed'));
+        document.getElementById('statusWaiting').addEventListener('click', () => this.setRocketStatus('waiting'));
+        document.getElementById('statusRemove').addEventListener('click', () => this.setRocketStatus('remove'));
+
         // Canvas drag and drop for files
         this.canvas.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -213,14 +219,21 @@ class Orgaversum {
             }
         }
 
-        // Check if clicking on object with orbiting rocket - stop the rocket
+        // Check if clicking on object with orbiting rocket
         let obj = this.getObjectAt(pos.x, pos.y);
         if (obj) {
             const rocketIndex = this.flyingRockets.findIndex(r => r.orbiting && r.target.id === obj.id);
             if (rocketIndex !== -1) {
-                this.createParticles(this.flyingRockets[rocketIndex].target.x, this.flyingRockets[rocketIndex].target.y, 15);
-                this.flyingRockets.splice(rocketIndex, 1);
-                return;
+                // For moons, show status modal
+                if (obj.type === 'moon') {
+                    this.showRocketStatusModal(obj);
+                    return;
+                } else {
+                    // For planets and suns, remove the rocket
+                    this.createParticles(this.flyingRockets[rocketIndex].target.x, this.flyingRockets[rocketIndex].target.y, 15);
+                    this.flyingRockets.splice(rocketIndex, 1);
+                    return;
+                }
             }
         }
 
@@ -825,6 +838,42 @@ class Orgaversum {
         this.previewingStation = null;
     }
 
+    showRocketStatusModal(moon) {
+        this.statusModalMoon = moon;
+        const modal = document.getElementById('rocketStatusModal');
+        modal.classList.remove('hidden');
+    }
+
+    hideRocketStatusModal() {
+        document.getElementById('rocketStatusModal').classList.add('hidden');
+        this.statusModalMoon = null;
+    }
+
+    setRocketStatus(status) {
+        if (!this.statusModalMoon) return;
+
+        const moon = this.statusModalMoon;
+
+        if (status === 'terraformed') {
+            moon.rocketStatus = 'terraformed';
+            this.createParticles(moon.x, moon.y, 30);
+        } else if (status === 'waiting') {
+            moon.rocketStatus = 'waiting';
+            this.createParticles(moon.x, moon.y, 20);
+        } else if (status === 'remove') {
+            // Remove the rocket
+            const rocketIndex = this.flyingRockets.findIndex(r => r.target.id === moon.id);
+            if (rocketIndex !== -1) {
+                this.flyingRockets.splice(rocketIndex, 1);
+            }
+            moon.rocketStatus = null;
+            this.createParticles(moon.x, moon.y, 15);
+        }
+
+        this.saveData();
+        this.hideRocketStatusModal();
+    }
+
     deleteStation() {
         if (!this.previewingMoon || !this.previewingStation) return;
 
@@ -1212,6 +1261,22 @@ class Orgaversum {
         });
 
         ctx.restore();
+
+        // Rocket status indicator
+        if (moon.rocketStatus) {
+            ctx.beginPath();
+            ctx.arc(moon.x, moon.y, moon.radius + 8, 0, Math.PI * 2);
+
+            if (moon.rocketStatus === 'terraformed') {
+                ctx.strokeStyle = '#10b981'; // Green
+                ctx.lineWidth = 4;
+            } else if (moon.rocketStatus === 'waiting') {
+                ctx.strokeStyle = '#ffffff'; // White
+                ctx.lineWidth = 4;
+            }
+
+            ctx.stroke();
+        }
 
         // Highlight if hovered or connecting
         if (isHovered || isConnecting) {
