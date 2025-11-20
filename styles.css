@@ -163,17 +163,26 @@ body {
 }
 
 .rocket-item {
-    width: 50px;
-    height: 50px;
+    width: 80px;
+    height: 60px;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    font-size: 2rem;
+    gap: 2px;
+    font-size: 1.5rem;
     cursor: pointer;
     border-radius: 12px;
     background: rgba(255, 255, 255, 0.05);
     border: 2px solid transparent;
     transition: all 0.3s ease;
+}
+
+.rocket-name {
+    font-size: 0.7rem;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
 }
 
 .rocket-item:hover {
