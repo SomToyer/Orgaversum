@@ -465,8 +465,7 @@ class Orgaversum {
 
     getStationPosition(moon, index, total) {
         const orbitRadius = moon.radius + 20;
-        const angleOffset = (Math.PI * 2 / total) * index;
-        const angle = this.time * 0.5 + angleOffset;
+        const angle = (Math.PI * 2 / total) * index;
 
         return {
             x: moon.x + Math.cos(angle) * orbitRadius,
@@ -1644,25 +1643,127 @@ class Orgaversum {
 
         let html = '';
 
-        // Render suns
+        // Render suns with their hierarchies
         this.suns.forEach(sun => {
-            html += this.renderRetroItem(sun, 'sun', '☀');
+            html += this.renderRetroSun(sun);
         });
 
-        // Render planets
+        // Render planets without sun
         this.planets.forEach(planet => {
-            html += this.renderRetroItem(planet, 'planet', '●');
+            if (!this.isConnectedToSun(planet.id)) {
+                html += this.renderRetroPlanet(planet);
+            }
         });
 
-        // Render moons with their stations
+        // Render moons without planet
         this.moons.forEach(moon => {
-            html += this.renderRetroMoon(moon);
+            if (!this.isConnectedToPlanet(moon.id)) {
+                html += this.renderRetroMoon(moon);
+            }
         });
 
         container.innerHTML = html;
 
         // Attach event listeners
         this.attachRetroListeners();
+    }
+
+    isConnectedToSun(planetId) {
+        return this.connections.some(conn =>
+            (conn.from === planetId || conn.to === planetId) &&
+            (this.suns.find(s => s.id === conn.from) || this.suns.find(s => s.id === conn.to))
+        );
+    }
+
+    isConnectedToPlanet(moonId) {
+        return this.connections.some(conn =>
+            (conn.from === moonId || conn.to === moonId) &&
+            (this.planets.find(p => p.id === conn.from) || this.planets.find(p => p.id === conn.to))
+        );
+    }
+
+    getConnectedPlanets(sunId) {
+        const planetIds = [];
+        this.connections.forEach(conn => {
+            if (conn.from === sunId) {
+                const planet = this.planets.find(p => p.id === conn.to);
+                if (planet) planetIds.push(planet.id);
+            } else if (conn.to === sunId) {
+                const planet = this.planets.find(p => p.id === conn.from);
+                if (planet) planetIds.push(planet.id);
+            }
+        });
+        return planetIds.map(id => this.planets.find(p => p.id === id));
+    }
+
+    getConnectedMoons(planetId) {
+        const moonIds = [];
+        this.connections.forEach(conn => {
+            if (conn.from === planetId) {
+                const moon = this.moons.find(m => m.id === conn.to);
+                if (moon) moonIds.push(moon.id);
+            } else if (conn.to === planetId) {
+                const moon = this.moons.find(m => m.id === conn.from);
+                if (moon) moonIds.push(moon.id);
+            }
+        });
+        return moonIds.map(id => this.moons.find(m => m.id === id));
+    }
+
+    renderRetroSun(sun) {
+        let html = `
+            <div class="retro-item retro-sun" data-id="${sun.id}" data-type="sun">
+                <div class="retro-item-header">
+                    <span class="retro-item-icon">☀</span>
+                    <span class="retro-item-name">${sun.name}</span>
+                    <div class="retro-item-actions">
+                        <button class="retro-action retro-focus" title="Fokus">◎</button>
+                        <button class="retro-action retro-edit" title="Bearbeiten">✎</button>
+                        <button class="retro-action retro-delete" title="Löschen">×</button>
+                    </div>
+                </div>
+        `;
+
+        // Render connected planets
+        const planets = this.getConnectedPlanets(sun.id);
+        if (planets.length > 0) {
+            html += '<div class="retro-children">';
+            planets.forEach(planet => {
+                html += this.renderRetroPlanet(planet);
+            });
+            html += '</div>';
+        }
+
+        html += '</div>';
+        return html;
+    }
+
+    renderRetroPlanet(planet) {
+        let html = `
+            <div class="retro-item retro-planet" data-id="${planet.id}" data-type="planet">
+                <div class="retro-item-header">
+                    <span class="retro-item-icon">●</span>
+                    <span class="retro-item-name">${planet.name}</span>
+                    <div class="retro-item-actions">
+                        <button class="retro-action retro-focus" title="Fokus">◎</button>
+                        <button class="retro-action retro-edit" title="Bearbeiten">✎</button>
+                        <button class="retro-action retro-delete" title="Löschen">×</button>
+                    </div>
+                </div>
+        `;
+
+        // Render connected moons
+        const moons = this.getConnectedMoons(planet.id);
+        if (moons.length > 0) {
+            html += '<div class="retro-children">';
+            moons.forEach(moon => {
+                html += this.renderRetroMoon(moon);
+            });
+            html += '</div>';
+        }
+
+        html += '</div>';
+        return html;
     }
 
     renderRetroItem(obj, type, icon) {
