@@ -854,29 +854,42 @@ class Orgaversum {
         if (!this.statusModalMoon) return;
 
         const moon = this.statusModalMoon;
-        const rocketIndex = this.flyingRockets.findIndex(r => r.target.id === moon.id);
 
         if (status === 'terraformed') {
             moon.rocketStatus = 'terraformed';
             this.createParticles(moon.x, moon.y, 30);
 
-            // Send rocket back to base
-            if (rocketIndex !== -1) {
-                this.returnRocketToBase(rocketIndex);
+            // Send ALL rockets at this moon back to base
+            const rocketIndices = [];
+            this.flyingRockets.forEach((r, index) => {
+                if (r.target.id === moon.id && r.orbiting) {
+                    rocketIndices.push(index);
+                }
+            });
+
+            // Return all rockets (in reverse order to avoid index shifting)
+            for (let i = rocketIndices.length - 1; i >= 0; i--) {
+                this.returnRocketToBase(rocketIndices[i]);
             }
         } else if (status === 'waiting') {
             moon.rocketStatus = 'waiting';
             this.createParticles(moon.x, moon.y, 20);
 
-            // Send rocket back to base
-            if (rocketIndex !== -1) {
-                this.returnRocketToBase(rocketIndex);
+            // Send ALL rockets at this moon back to base
+            const rocketIndices = [];
+            this.flyingRockets.forEach((r, index) => {
+                if (r.target.id === moon.id && r.orbiting) {
+                    rocketIndices.push(index);
+                }
+            });
+
+            // Return all rockets (in reverse order to avoid index shifting)
+            for (let i = rocketIndices.length - 1; i >= 0; i--) {
+                this.returnRocketToBase(rocketIndices[i]);
             }
         } else if (status === 'remove') {
-            // Remove the rocket immediately
-            if (rocketIndex !== -1) {
-                this.flyingRockets.splice(rocketIndex, 1);
-            }
+            // Remove ALL rockets at this moon immediately
+            this.flyingRockets = this.flyingRockets.filter(r => r.target.id !== moon.id);
             moon.rocketStatus = null;
             this.createParticles(moon.x, moon.y, 15);
         }
@@ -1699,6 +1712,13 @@ class Orgaversum {
     }
 
     flyRocketTo(target) {
+        // If target is a moon with completed terraforming, remove the status
+        if (target.type === 'moon' && target.rocketStatus === 'terraformed') {
+            target.rocketStatus = null;
+            this.createParticles(target.x, target.y, 20);
+            this.saveData();
+        }
+
         // Add new rocket to the array
         this.flyingRockets.push({
             startX: 20,
