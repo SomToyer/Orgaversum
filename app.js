@@ -1155,8 +1155,8 @@ class Orgaversum {
         const isHovered = this.hovering === sun;
         const isConnecting = this.connectFirst === sun;
 
-        // In galaxy view, make suns much larger for visibility
-        const galaxyScale = this.galaxyView ? 8 : 1;
+        // In galaxy view, make suns larger for visibility but not too big
+        const galaxyScale = this.galaxyView ? 4 : 1;
         const displayRadius = sun.radius * galaxyScale;
 
         // Pulsing effect
@@ -1570,9 +1570,9 @@ class Orgaversum {
         const fontSizes = { sun: 28, planet: 24, moon: 18 };
         let fontSize = fontSizes[obj.type] || 18;
 
-        // In galaxy view, make sun labels much larger
+        // In galaxy view, make sun labels larger but proportional
         if (this.galaxyView && obj.type === 'sun') {
-            fontSize = fontSize * 6; // Scale up for galaxy view
+            fontSize = fontSize * 3.5; // Scale up for galaxy view (smaller than before)
         }
 
         ctx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`;
@@ -1584,9 +1584,9 @@ class Orgaversum {
 
         // Text with black shadow for better readability
         ctx.shadowColor = '#000000';
-        ctx.shadowBlur = this.galaxyView ? 20 : 8;
-        ctx.shadowOffsetX = this.galaxyView ? 4 : 2;
-        ctx.shadowOffsetY = this.galaxyView ? 4 : 2;
+        ctx.shadowBlur = this.galaxyView ? 12 : 8;
+        ctx.shadowOffsetX = this.galaxyView ? 3 : 2;
+        ctx.shadowOffsetY = this.galaxyView ? 3 : 2;
         ctx.fillStyle = '#ffffff';
         ctx.fillText(obj.name, obj.x, y);
 
