@@ -2045,7 +2045,7 @@ class Orgaversum {
                 }
             } else {
                 // Orbiting around target - draw in world coordinates
-                const { target, orbitAngle, color, name } = rocket;
+                const { target, orbitAngle, color } = rocket;
 
                 // Apply transformation
                 this.ctx.translate(this.offsetX, this.offsetY);
@@ -2072,22 +2072,6 @@ class Orgaversum {
                 this.ctx.scale(1 / this.scale, 1 / this.scale);
                 this.ctx.font = '30px Arial';
                 this.ctx.fillText('🚀', -15, 15);
-                this.ctx.restore();
-
-                // Draw rocket name
-                this.ctx.save();
-                this.ctx.font = `bold ${16 / this.scale}px 'Segoe UI', sans-serif`;
-                this.ctx.textAlign = 'center';
-                this.ctx.textBaseline = 'middle';
-                this.ctx.shadowColor = '#000000';
-                this.ctx.shadowBlur = 8 / this.scale;
-                this.ctx.shadowOffsetX = 2 / this.scale;
-                this.ctx.shadowOffsetY = 2 / this.scale;
-                this.ctx.fillStyle = color;
-                this.ctx.fillText(name, rocketX, rocketY - 25 / this.scale);
-                this.ctx.shadowBlur = 0;
-                this.ctx.shadowOffsetX = 0;
-                this.ctx.shadowOffsetY = 0;
                 this.ctx.restore();
 
                 // Draw trail particles
