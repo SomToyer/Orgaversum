@@ -42,7 +42,7 @@ class Orgaversum {
 
         // Rocket state
         this.selectedRocket = null;
-        this.flyingRocket = null;
+        this.flyingRockets = [];
         this.rocketTarget = null;
 
         // Drag and drop state
@@ -214,11 +214,12 @@ class Orgaversum {
         }
 
         // Check if clicking on object with orbiting rocket - stop the rocket
-        if (this.flyingRocket && this.flyingRocket.orbiting) {
-            const obj = this.getObjectAt(pos.x, pos.y);
-            if (obj && obj.id === this.flyingRocket.target.id) {
-                this.createParticles(this.flyingRocket.target.x, this.flyingRocket.target.y, 15);
-                this.flyingRocket = null;
+        let obj = this.getObjectAt(pos.x, pos.y);
+        if (obj) {
+            const rocketIndex = this.flyingRockets.findIndex(r => r.orbiting && r.target.id === obj.id);
+            if (rocketIndex !== -1) {
+                this.createParticles(this.flyingRockets[rocketIndex].target.x, this.flyingRockets[rocketIndex].target.y, 15);
+                this.flyingRockets.splice(rocketIndex, 1);
                 return;
             }
         }
@@ -230,7 +231,8 @@ class Orgaversum {
             return;
         }
 
-        const obj = this.getObjectAt(pos.x, pos.y);
+        // Reuse obj variable (already declared above)
+        if (!obj) obj = this.getObjectAt(pos.x, pos.y);
 
         if (this.connectMode && obj) {
             this.handleConnect(obj);
@@ -884,7 +886,7 @@ class Orgaversum {
     animate() {
         this.time += 0.016;
         this.updateParticles();
-        this.updateFlyingRocket();
+        this.updateFlyingRockets();
         this.draw();
         requestAnimationFrame(() => this.animate());
     }
@@ -927,8 +929,8 @@ class Orgaversum {
         // Restore transformation
         this.ctx.restore();
 
-        // Draw flying rocket (in screen space)
-        this.drawFlyingRocket();
+        // Draw flying rockets (in screen space)
+        this.drawFlyingRockets();
 
         // Draw zoom indicator (in screen space)
         this.drawZoomIndicator();
@@ -1609,7 +1611,8 @@ class Orgaversum {
     }
 
     flyRocketTo(target) {
-        this.flyingRocket = {
+        // Add new rocket to the array
+        this.flyingRockets.push({
             startX: 20,
             startY: window.innerHeight / 2,
             endX: target.x,
@@ -1619,109 +1622,111 @@ class Orgaversum {
             color: this.selectedRocket.color,
             orbiting: false,
             orbitAngle: 0
-        };
+        });
 
         // Deselect rocket
         this.selectedRocket.element.classList.remove('active');
         this.selectedRocket = null;
     }
 
-    updateFlyingRocket() {
-        if (!this.flyingRocket) return;
+    updateFlyingRockets() {
+        // Update all flying rockets
+        this.flyingRockets.forEach(rocket => {
+            if (!rocket.orbiting) {
+                // Flying to target - slower speed (0.01 instead of 0.02)
+                rocket.progress += 0.01;
 
-        if (!this.flyingRocket.orbiting) {
-            // Flying to target
-            this.flyingRocket.progress += 0.02;
-
-            if (this.flyingRocket.progress >= 1) {
-                // Rocket arrived, start orbiting
-                this.flyingRocket.orbiting = true;
-                this.flyingRocket.orbitAngle = 0;
-                this.createParticles(this.flyingRocket.target.x, this.flyingRocket.target.y, 20);
+                if (rocket.progress >= 1) {
+                    // Rocket arrived, start orbiting
+                    rocket.orbiting = true;
+                    rocket.orbitAngle = 0;
+                    this.createParticles(rocket.target.x, rocket.target.y, 20);
+                }
+            } else {
+                // Orbiting around target - slower speed (0.015 instead of 0.03)
+                rocket.orbitAngle += 0.015;
             }
-        } else {
-            // Orbiting around target
-            this.flyingRocket.orbitAngle += 0.03;
-        }
+        });
     }
 
-    drawFlyingRocket() {
-        if (!this.flyingRocket) return;
-
-        this.ctx.save();
-
-        if (!this.flyingRocket.orbiting) {
-            // Flying to target
-            const { startX, startY, endX, endY, progress, color } = this.flyingRocket;
-
-            // Convert to screen coordinates
-            const screenStart = this.getScreenPos(startX / this.scale - this.offsetX / this.scale, startY / this.scale - this.offsetY / this.scale);
-            const screenEnd = this.getScreenPos(endX, endY);
-
-            // Interpolate position with parabolic arc
-            const currentX = screenStart.x + (screenEnd.x - screenStart.x) * progress;
-            const currentY = screenStart.y + (screenEnd.y - screenStart.y) * progress - Math.sin(progress * Math.PI) * 100;
-
-            // Draw rocket
-            this.ctx.font = '30px Arial';
-            this.ctx.fillText('🚀', currentX - 15, currentY + 15);
-
-            // Draw trail
-            for (let i = 0; i < 5; i++) {
-                const trailProgress = Math.max(0, progress - i * 0.05);
-                const trailX = screenStart.x + (screenEnd.x - screenStart.x) * trailProgress;
-                const trailY = screenStart.y + (screenEnd.y - screenStart.y) * trailProgress - Math.sin(trailProgress * Math.PI) * 100;
-
-                this.ctx.beginPath();
-                this.ctx.arc(trailX, trailY, 3, 0, Math.PI * 2);
-                this.ctx.fillStyle = color + Math.floor((1 - i * 0.2) * 255).toString(16).padStart(2, '0');
-                this.ctx.fill();
-            }
-        } else {
-            // Orbiting around target - draw in world coordinates
-            const { target, orbitAngle, color } = this.flyingRocket;
-
-            // Apply transformation
-            this.ctx.translate(this.offsetX, this.offsetY);
-            this.ctx.scale(this.scale, this.scale);
-
-            // Calculate orbit position
-            const orbitRadius = target.radius + 40;
-            const rocketX = target.x + Math.cos(orbitAngle) * orbitRadius;
-            const rocketY = target.y + Math.sin(orbitAngle) * orbitRadius;
-
-            // Draw orbit path
-            this.ctx.beginPath();
-            this.ctx.arc(target.x, target.y, orbitRadius, 0, Math.PI * 2);
-            this.ctx.strokeStyle = color + '40';
-            this.ctx.lineWidth = 2 / this.scale;
-            this.ctx.setLineDash([5 / this.scale, 5 / this.scale]);
-            this.ctx.stroke();
-            this.ctx.setLineDash([]);
-
-            // Draw rocket with rotation
+    drawFlyingRockets() {
+        // Draw all flying rockets
+        this.flyingRockets.forEach(rocket => {
             this.ctx.save();
-            this.ctx.translate(rocketX, rocketY);
-            this.ctx.rotate(orbitAngle + Math.PI / 2);
-            this.ctx.scale(1 / this.scale, 1 / this.scale);
-            this.ctx.font = '30px Arial';
-            this.ctx.fillText('🚀', -15, 15);
-            this.ctx.restore();
 
-            // Draw trail particles
-            for (let i = 0; i < 3; i++) {
-                const trailAngle = orbitAngle - (i + 1) * 0.3;
-                const trailX = target.x + Math.cos(trailAngle) * orbitRadius;
-                const trailY = target.y + Math.sin(trailAngle) * orbitRadius;
+            if (!rocket.orbiting) {
+                // Flying to target
+                const { startX, startY, endX, endY, progress, color } = rocket;
 
+                // Convert to screen coordinates
+                const screenStart = this.getScreenPos(startX / this.scale - this.offsetX / this.scale, startY / this.scale - this.offsetY / this.scale);
+                const screenEnd = this.getScreenPos(endX, endY);
+
+                // Interpolate position with parabolic arc
+                const currentX = screenStart.x + (screenEnd.x - screenStart.x) * progress;
+                const currentY = screenStart.y + (screenEnd.y - screenStart.y) * progress - Math.sin(progress * Math.PI) * 100;
+
+                // Draw rocket
+                this.ctx.font = '30px Arial';
+                this.ctx.fillText('🚀', currentX - 15, currentY + 15);
+
+                // Draw trail
+                for (let i = 0; i < 5; i++) {
+                    const trailProgress = Math.max(0, progress - i * 0.05);
+                    const trailX = screenStart.x + (screenEnd.x - screenStart.x) * trailProgress;
+                    const trailY = screenStart.y + (screenEnd.y - screenStart.y) * trailProgress - Math.sin(trailProgress * Math.PI) * 100;
+
+                    this.ctx.beginPath();
+                    this.ctx.arc(trailX, trailY, 3, 0, Math.PI * 2);
+                    this.ctx.fillStyle = color + Math.floor((1 - i * 0.2) * 255).toString(16).padStart(2, '0');
+                    this.ctx.fill();
+                }
+            } else {
+                // Orbiting around target - draw in world coordinates
+                const { target, orbitAngle, color } = rocket;
+
+                // Apply transformation
+                this.ctx.translate(this.offsetX, this.offsetY);
+                this.ctx.scale(this.scale, this.scale);
+
+                // Calculate orbit position
+                const orbitRadius = target.radius + 40;
+                const rocketX = target.x + Math.cos(orbitAngle) * orbitRadius;
+                const rocketY = target.y + Math.sin(orbitAngle) * orbitRadius;
+
+                // Draw orbit path
                 this.ctx.beginPath();
-                this.ctx.arc(trailX, trailY, 3 / this.scale, 0, Math.PI * 2);
-                this.ctx.fillStyle = color + Math.floor((1 - i * 0.3) * 255).toString(16).padStart(2, '0');
-                this.ctx.fill();
-            }
-        }
+                this.ctx.arc(target.x, target.y, orbitRadius, 0, Math.PI * 2);
+                this.ctx.strokeStyle = color + '40';
+                this.ctx.lineWidth = 2 / this.scale;
+                this.ctx.setLineDash([5 / this.scale, 5 / this.scale]);
+                this.ctx.stroke();
+                this.ctx.setLineDash([]);
 
-        this.ctx.restore();
+                // Draw rocket with rotation
+                this.ctx.save();
+                this.ctx.translate(rocketX, rocketY);
+                this.ctx.rotate(orbitAngle + Math.PI / 2);
+                this.ctx.scale(1 / this.scale, 1 / this.scale);
+                this.ctx.font = '30px Arial';
+                this.ctx.fillText('🚀', -15, 15);
+                this.ctx.restore();
+
+                // Draw trail particles
+                for (let i = 0; i < 3; i++) {
+                    const trailAngle = orbitAngle - (i + 1) * 0.3;
+                    const trailX = target.x + Math.cos(trailAngle) * orbitRadius;
+                    const trailY = target.y + Math.sin(trailAngle) * orbitRadius;
+
+                    this.ctx.beginPath();
+                    this.ctx.arc(trailX, trailY, 3 / this.scale, 0, Math.PI * 2);
+                    this.ctx.fillStyle = color + Math.floor((1 - i * 0.3) * 255).toString(16).padStart(2, '0');
+                    this.ctx.fill();
+                }
+            }
+
+            this.ctx.restore();
+        });
     }
 
     // Canvas Drag and Drop
