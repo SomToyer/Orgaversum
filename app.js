@@ -511,10 +511,27 @@ class Orgaversum {
                     from: this.connectFirst.id,
                     to: obj.id
                 });
+
+                // If connecting moon to planet, set moon's color to planet's color
+                let moon = null;
+                let planet = null;
+
+                if (this.connectFirst.type === 'moon' && obj.type === 'planet') {
+                    moon = this.connectFirst;
+                    planet = obj;
+                } else if (this.connectFirst.type === 'planet' && obj.type === 'moon') {
+                    planet = this.connectFirst;
+                    moon = obj;
+                }
+
+                if (moon && planet && !moon.colorManuallySet) {
+                    moon.color = { ...planet.color };
+                }
             }
 
             this.createParticles(obj.x, obj.y, 20);
             this.connectFirst = null;
+            this.updatePlanetStatuses();
             this.saveData();
         }
     }
@@ -594,10 +611,16 @@ class Orgaversum {
         }
 
         // Update color
+        const oldColor = this.editingObj.color.main;
         this.editingObj.color = {
             main: colorValue,
             glow: this.hexToRgba(colorValue, 0.3)
         };
+
+        // Mark color as manually set if changed
+        if (oldColor !== colorValue && this.editingObj.type === 'moon') {
+            this.editingObj.colorManuallySet = true;
+        }
 
         this.saveData();
         this.hideEditModal();
@@ -894,8 +917,45 @@ class Orgaversum {
             this.createParticles(moon.x, moon.y, 15);
         }
 
+        this.updatePlanetStatuses();
         this.saveData();
         this.hideRocketStatusModal();
+    }
+
+    updatePlanetStatuses() {
+        // Update status for all planets based on their moons
+        this.planets.forEach(planet => {
+            // Find all moons connected to this planet
+            const connectedMoonIds = [];
+
+            this.connections.forEach(conn => {
+                if (conn.from === planet.id) {
+                    const obj = this.getObjectById(conn.to);
+                    if (obj && obj.type === 'moon') {
+                        connectedMoonIds.push(obj.id);
+                    }
+                } else if (conn.to === planet.id) {
+                    const obj = this.getObjectById(conn.from);
+                    if (obj && obj.type === 'moon') {
+                        connectedMoonIds.push(obj.id);
+                    }
+                }
+            });
+
+            // If planet has moons
+            if (connectedMoonIds.length > 0) {
+                // Check if ALL moons are terraformed
+                const allTerraformed = connectedMoonIds.every(moonId => {
+                    const moon = this.moons.find(m => m.id === moonId);
+                    return moon && moon.rocketStatus === 'terraformed';
+                });
+
+                planet.rocketStatus = allTerraformed ? 'terraformed' : null;
+            } else {
+                // No moons, no status
+                planet.rocketStatus = null;
+            }
+        });
     }
 
     returnRocketToBase(rocketIndex) {
@@ -1223,6 +1283,15 @@ class Orgaversum {
             );
             ctx.strokeStyle = `rgba(255, 255, 255, 0.3)`;
             ctx.lineWidth = 3;
+            ctx.stroke();
+        }
+
+        // Rocket status indicator (terraformed planet)
+        if (planet.rocketStatus === 'terraformed') {
+            ctx.beginPath();
+            ctx.arc(planet.x, planet.y, planet.radius + 8, 0, Math.PI * 2);
+            ctx.strokeStyle = '#10b981'; // Green
+            ctx.lineWidth = 4;
             ctx.stroke();
         }
 
@@ -1716,6 +1785,7 @@ class Orgaversum {
         if (target.type === 'moon' && target.rocketStatus === 'terraformed') {
             target.rocketStatus = null;
             this.createParticles(target.x, target.y, 20);
+            this.updatePlanetStatuses();
             this.saveData();
         }
 
