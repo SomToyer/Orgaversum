@@ -213,6 +213,16 @@ class Orgaversum {
             }
         }
 
+        // Check if clicking on object with orbiting rocket - stop the rocket
+        if (this.flyingRocket && this.flyingRocket.orbiting) {
+            const obj = this.getObjectAt(pos.x, pos.y);
+            if (obj && obj.id === this.flyingRocket.target.id) {
+                this.createParticles(this.flyingRocket.target.x, this.flyingRocket.target.y, 15);
+                this.flyingRocket = null;
+                return;
+            }
+        }
+
         // Check for station click first
         const stationClick = this.getStationAt(pos.x, pos.y);
         if (stationClick) {
