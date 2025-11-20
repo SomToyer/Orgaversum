@@ -109,7 +109,6 @@ class Orgaversum {
         document.getElementById('addPlanet').addEventListener('click', () => this.showModal('planet'));
         document.getElementById('addMoon').addEventListener('click', () => this.showModal('moon'));
         document.getElementById('toggleConnect').addEventListener('click', () => this.toggleConnectMode());
-        document.getElementById('clearAll').addEventListener('click', () => this.clearAll());
 
         // Modal
         document.getElementById('modalCancel').addEventListener('click', () => this.hideModal());
@@ -1252,7 +1251,7 @@ class Orgaversum {
                 this.ctx.stroke();
 
                 // Flowing particles along connection
-                const progress = (this.time * 0.5) % 1;
+                const progress = (this.time * 0.2) % 1;
                 const px = from.x + (to.x - from.x) * progress;
                 const py = from.y + (to.y - from.y) * progress;
 
