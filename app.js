@@ -1712,4 +1712,7 @@ class Orgaversum {
         }
         return null;
     }
+}
 
+// Initialize the application
+new Orgaversum();
