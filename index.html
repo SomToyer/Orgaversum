@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Orgaversum - Todo Planeten Abenteuer</title>
     <link rel="stylesheet" href="styles.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
     <div id="app">
@@ -28,53 +27,23 @@
                     <span class="icon">🗑</span> Leeren
                 </button>
             </div>
-            <button id="toggle3D" class="btn btn-3d">
-                <span class="icon">🚀</span> 3D Ansicht
-            </button>
             <div id="connectMode" class="connect-indicator hidden">
                 Verbindungsmodus aktiv - Klicke zwei Objekte
             </div>
         </div>
+
+        <!-- Raketen Auswahl -->
+        <div id="rocketSelector" class="rocket-selector">
+            <div class="rocket-title">Raketen</div>
+            <div class="rocket-item" data-color="#ef4444" style="color: #ef4444;">🚀</div>
+            <div class="rocket-item" data-color="#f59e0b" style="color: #f59e0b;">🚀</div>
+            <div class="rocket-item" data-color="#10b981" style="color: #10b981;">🚀</div>
+            <div class="rocket-item" data-color="#06b6d4" style="color: #06b6d4;">🚀</div>
+            <div class="rocket-item" data-color="#6366f1" style="color: #6366f1;">🚀</div>
+            <div class="rocket-item" data-color="#ec4899" style="color: #ec4899;">🚀</div>
+        </div>
+
         <canvas id="universe"></canvas>
-        <div id="universe3D" class="hidden"></div>
-
-        <!-- 3D Controls -->
-        <div id="controls3D" class="controls-3d hidden">
-            <div class="spaceship-controls">
-                <div class="control-label">Raumschiff Steuerung</div>
-                <div class="target-info" id="targetInfo">Kein Ziel ausgewählt</div>
-                <button id="startTravel" class="btn btn-travel" disabled>Reise starten</button>
-                <div class="travel-progress hidden" id="travelProgress">
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="progressFill"></div>
-                    </div>
-                    <span class="progress-text" id="progressText">0%</span>
-                </div>
-            </div>
-            <div class="camera-controls">
-                <button id="cockpitView" class="btn btn-camera active">Cockpit</button>
-                <button id="externalView" class="btn btn-camera">Extern</button>
-            </div>
-            <div class="control-hint">
-                <span>W/S</span> Vorwärts/Zurück
-                <span>A/D</span> Links/Rechts
-            </div>
-        </div>
-
-        <!-- Cockpit Overlay -->
-        <div id="cockpitOverlay" class="cockpit-overlay hidden">
-            <div class="cockpit-frame">
-                <div class="cockpit-top"></div>
-                <div class="cockpit-left"></div>
-                <div class="cockpit-right"></div>
-                <div class="cockpit-bottom"></div>
-            </div>
-            <div class="cockpit-hud">
-                <div class="hud-speed" id="hudSpeed">0 km/s</div>
-                <div class="hud-target" id="hudTarget">Kein Ziel</div>
-                <div class="hud-crosshair">+</div>
-            </div>
-        </div>
 
         <!-- Modal für Namen -->
         <div id="modal" class="modal hidden">
@@ -93,6 +62,10 @@
             <div class="modal-content">
                 <h2>Bearbeiten</h2>
                 <input type="text" id="editNameInput" placeholder="Name bearbeiten...">
+                <div class="color-picker">
+                    <label>Farbe:</label>
+                    <input type="color" id="colorPicker">
+                </div>
                 <div class="modal-buttons">
                     <button id="editDelete" class="btn btn-delete">Löschen</button>
                     <button id="editCancel" class="btn btn-cancel">Abbrechen</button>

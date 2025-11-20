@@ -191,7 +191,7 @@ class Orgaversum {
         const screenX = e.clientX - rect.left;
         const screenY = e.clientY - rect.top;
 
-        // Middle mouse button for panning
+        // Middle mouse button or space key for panning
         if (e.button === 1) {
             e.preventDefault();
             this.isPanning = true;
@@ -199,19 +199,7 @@ class Orgaversum {
             return;
         }
 
-        // Only handle left click from here
-        if (e.button !== 0) return;
-
         const pos = this.getMousePos(e);
-
-        // Check if clicked with a selected rocket
-        if (this.selectedRocket) {
-            const obj = this.getObjectAt(pos.x, pos.y);
-            if (obj) {
-                this.flyRocketTo(obj);
-                return;
-            }
-        }
 
         // Check for station click first
         const stationClick = this.getStationAt(pos.x, pos.y);
@@ -534,12 +522,9 @@ class Orgaversum {
         this.editingObj = obj;
         const modal = document.getElementById('editModal');
         const input = document.getElementById('editNameInput');
-        const colorPicker = document.getElementById('colorPicker');
         const stationControls = document.getElementById('stationControls');
 
         input.value = obj.name;
-        colorPicker.value = obj.color.main;
-
         modal.classList.remove('hidden');
         input.focus();
         input.select();
@@ -561,27 +546,12 @@ class Orgaversum {
         if (!this.editingObj) return;
 
         const name = document.getElementById('editNameInput').value.trim();
-        const colorValue = document.getElementById('colorPicker').value;
-
         if (name) {
             this.editingObj.name = name;
+            this.saveData();
         }
 
-        // Update color
-        this.editingObj.color = {
-            main: colorValue,
-            glow: this.hexToRgba(colorValue, 0.3)
-        };
-
-        this.saveData();
         this.hideEditModal();
-    }
-
-    hexToRgba(hex, alpha) {
-        const r = parseInt(hex.slice(1, 3), 16);
-        const g = parseInt(hex.slice(3, 5), 16);
-        const b = parseInt(hex.slice(5, 7), 16);
-        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
 
     deleteSelected() {
@@ -874,7 +844,6 @@ class Orgaversum {
     animate() {
         this.time += 0.016;
         this.updateParticles();
-        this.updateFlyingRocket();
         this.draw();
         requestAnimationFrame(() => this.animate());
     }
@@ -916,9 +885,6 @@ class Orgaversum {
 
         // Restore transformation
         this.ctx.restore();
-
-        // Draw flying rocket (in screen space)
-        this.drawFlyingRocket();
 
         // Draw zoom indicator (in screen space)
         this.drawZoomIndicator();
@@ -1339,34 +1305,30 @@ class Orgaversum {
 
     drawLabel(obj) {
         const ctx = this.ctx;
-        const fontSizes = { sun: 28, planet: 24, moon: 18 };
-        const fontSize = fontSizes[obj.type] || 18;
+        const fontSizes = { sun: 14, planet: 12, moon: 10 };
+        const fontSize = fontSizes[obj.type] || 10;
 
-        ctx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`;
+        ctx.font = `${fontSize}px 'Segoe UI', sans-serif`;
         ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
+        ctx.textBaseline = 'top';
 
-        // Draw name in the CENTER/MIDDLE of the object
-        const y = obj.y;
+        const y = obj.y + obj.radius + 8;
 
         // Background
         const metrics = ctx.measureText(obj.name);
-        const padding = 8;
+        const padding = 4;
 
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.fillRect(
             obj.x - metrics.width / 2 - padding,
-            y - fontSize / 2 - padding / 2,
+            y - 2,
             metrics.width + padding * 2,
             fontSize + padding
         );
 
-        // Text with glow
-        ctx.shadowColor = obj.color.main;
-        ctx.shadowBlur = 10;
+        // Text
         ctx.fillStyle = '#fff';
         ctx.fillText(obj.name, obj.x, y);
-        ctx.shadowBlur = 0;
     }
 
     drawParticles() {
@@ -1584,132 +1546,737 @@ class Orgaversum {
         this.createParticles(obj.x, obj.y, 20);
     }
 
-    // Rocket Methods
-    selectRocket(rocketElement) {
-        // Remove active class from all rockets
-        document.querySelectorAll('.rocket-item').forEach(r => r.classList.remove('active'));
+    // 3D Mode Methods
+    toggle3DMode() {
+        this.is3DMode = !this.is3DMode;
+        const btn = document.getElementById('toggle3D');
+        const canvas2D = document.getElementById('universe');
+        const container3D = document.getElementById('universe3D');
+        const controls3D = document.getElementById('controls3D');
 
-        // Add active class to selected rocket
-        rocketElement.classList.add('active');
+        const cockpitOverlay = document.getElementById('cockpitOverlay');
 
-        this.selectedRocket = {
-            element: rocketElement,
-            color: rocketElement.dataset.color
+        if (this.is3DMode) {
+            btn.classList.add('active');
+            btn.innerHTML = '<span class="icon">🗺️</span> 2D Ansicht';
+            canvas2D.classList.add('hidden');
+            container3D.classList.remove('hidden');
+            controls3D.classList.remove('hidden');
+            if (this.isCockpitView) {
+                cockpitOverlay.classList.remove('hidden');
+            }
+            this.init3DScene();
+        } else {
+            btn.classList.remove('active');
+            btn.innerHTML = '<span class="icon">🚀</span> 3D Ansicht';
+            canvas2D.classList.remove('hidden');
+            container3D.classList.add('hidden');
+            controls3D.classList.add('hidden');
+            cockpitOverlay.classList.add('hidden');
+            this.dispose3DScene();
+        }
+    }
+
+    setCockpitView(isCockpit) {
+        this.isCockpitView = isCockpit;
+        const cockpitBtn = document.getElementById('cockpitView');
+        const externalBtn = document.getElementById('externalView');
+        const cockpitOverlay = document.getElementById('cockpitOverlay');
+
+        if (isCockpit) {
+            cockpitBtn.classList.add('active');
+            externalBtn.classList.remove('active');
+            cockpitOverlay.classList.remove('hidden');
+        } else {
+            cockpitBtn.classList.remove('active');
+            externalBtn.classList.add('active');
+            cockpitOverlay.classList.add('hidden');
+        }
+    }
+
+    init3DScene() {
+        const container = document.getElementById('universe3D');
+
+        // Scene
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x0a0a1a);
+
+        // Camera
+        this.camera = new THREE.PerspectiveCamera(
+            75,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            10000
+        );
+        this.camera.position.set(0, 200, 500);
+        this.camera.lookAt(0, 0, 0);
+
+        // Renderer
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(this.renderer.domElement);
+
+        // Lights
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+        this.scene.add(ambientLight);
+
+        const pointLight = new THREE.PointLight(0xffffff, 1, 2000);
+        pointLight.position.set(0, 100, 0);
+        this.scene.add(pointLight);
+
+        // Stars background
+        this.createStarfield();
+
+        // Create 3D objects from data
+        this.create3DObjects();
+
+        // Create spaceship
+        this.createSpaceship();
+
+        // Mouse controls
+        this.setupOrbitControls();
+
+        // Click handler for 3D objects
+        this.renderer.domElement.addEventListener('click', (e) => this.on3DClick(e));
+
+        // Resize handler
+        this.resize3DHandler = () => {
+            this.camera.aspect = window.innerWidth / window.innerHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
         };
+        window.addEventListener('resize', this.resize3DHandler);
+
+        // Start 3D animation
+        this.animate3D();
     }
 
-    flyRocketTo(target) {
-        this.flyingRocket = {
-            startX: 20,
-            startY: window.innerHeight / 2,
-            endX: target.x,
-            endY: target.y,
-            progress: 0,
-            target: target,
-            color: this.selectedRocket.color
-        };
-
-        // Deselect rocket
-        this.selectedRocket.element.classList.remove('active');
-        this.selectedRocket = null;
-    }
-
-    updateFlyingRocket() {
-        if (!this.flyingRocket) return;
-
-        this.flyingRocket.progress += 0.02;
-
-        if (this.flyingRocket.progress >= 1) {
-            // Rocket arrived, open edit modal
-            this.showEditModal(this.flyingRocket.target);
-            this.flyingRocket = null;
-        }
-    }
-
-    drawFlyingRocket() {
-        if (!this.flyingRocket) return;
-
-        const { startX, startY, endX, endY, progress, color } = this.flyingRocket;
-
-        // Convert to screen coordinates
-        const screenStart = this.getScreenPos(startX / this.scale - this.offsetX / this.scale, startY / this.scale - this.offsetY / this.scale);
-        const screenEnd = this.getScreenPos(endX, endY);
-
-        // Interpolate position with parabolic arc
-        const currentX = screenStart.x + (screenEnd.x - screenStart.x) * progress;
-        const currentY = screenStart.y + (screenEnd.y - screenStart.y) * progress - Math.sin(progress * Math.PI) * 100;
-
-        // Draw rocket
-        this.ctx.save();
-        this.ctx.font = '30px Arial';
-        this.ctx.fillText('🚀', currentX - 15, currentY + 15);
-
-        // Draw trail
-        for (let i = 0; i < 5; i++) {
-            const trailProgress = Math.max(0, progress - i * 0.05);
-            const trailX = screenStart.x + (screenEnd.x - screenStart.x) * trailProgress;
-            const trailY = screenStart.y + (screenEnd.y - screenStart.y) * trailProgress - Math.sin(trailProgress * Math.PI) * 100;
-
-            this.ctx.beginPath();
-            this.ctx.arc(trailX, trailY, 3, 0, Math.PI * 2);
-            this.ctx.fillStyle = color + Math.floor((1 - i * 0.2) * 255).toString(16).padStart(2, '0');
-            this.ctx.fill();
+    dispose3DScene() {
+        if (this.renderer) {
+            const container = document.getElementById('universe3D');
+            container.removeChild(this.renderer.domElement);
+            this.renderer.dispose();
+            this.renderer = null;
         }
 
-        this.ctx.restore();
-    }
-
-    // Canvas Drag and Drop
-    handleCanvasDrop(e) {
-        if (!e.dataTransfer.files.length) return;
-
-        const pos = this.getMousePos(e);
-        const moon = this.getMoonAt(pos.x, pos.y);
-
-        if (!moon) {
-            alert('Bitte ziehe die Datei auf einen Mond');
-            return;
+        if (this.resize3DHandler) {
+            window.removeEventListener('resize', this.resize3DHandler);
         }
 
-        const file = e.dataTransfer.files[0];
-        const reader = new FileReader();
+        this.scene = null;
+        this.camera = null;
+        this.objects3D.clear();
+        this.connectionLines = [];
+    }
 
-        reader.onload = (event) => {
-            const fileData = event.target.result;
-            let stationType = 'note';
+    createStarfield() {
+        const starsGeometry = new THREE.BufferGeometry();
+        const starPositions = [];
 
-            if (file.type.startsWith('image/')) {
-                stationType = 'image';
-            } else if (file.type.startsWith('video/')) {
-                stationType = 'video';
-            } else if (file.type.startsWith('audio/')) {
-                stationType = 'audio';
+        for (let i = 0; i < 2000; i++) {
+            const x = (Math.random() - 0.5) * 4000;
+            const y = (Math.random() - 0.5) * 4000;
+            const z = (Math.random() - 0.5) * 4000;
+            starPositions.push(x, y, z);
+        }
+
+        starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
+
+        const starsMaterial = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 2,
+            sizeAttenuation: true
+        });
+
+        const stars = new THREE.Points(starsGeometry, starsMaterial);
+        this.scene.add(stars);
+    }
+
+    create3DObjects() {
+        // Clear existing
+        this.objects3D.forEach((mesh) => {
+            this.scene.remove(mesh);
+        });
+        this.objects3D.clear();
+
+        this.connectionLines.forEach(line => {
+            this.scene.remove(line);
+        });
+        this.connectionLines = [];
+
+        // Scale factor for 3D positioning
+        const scaleFactor = 0.5;
+        const centerX = this.canvas.width / 2;
+        const centerY = this.canvas.height / 2;
+
+        // Create suns
+        this.suns.forEach(sun => {
+            const geometry = new THREE.SphereGeometry(sun.radius * 0.8, 32, 32);
+            const color = new THREE.Color(sun.color.main);
+            const material = new THREE.MeshBasicMaterial({
+                color: color,
+                emissive: color,
+                emissiveIntensity: 1
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+
+            // Add glow
+            const glowGeometry = new THREE.SphereGeometry(sun.radius * 1.2, 32, 32);
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: color,
+                transparent: true,
+                opacity: 0.3,
+                side: THREE.BackSide
+            });
+            const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+            mesh.add(glow);
+
+            // Position
+            const x = (sun.x - centerX) * scaleFactor;
+            const z = (sun.y - centerY) * scaleFactor;
+            mesh.position.set(x, 0, z);
+
+            mesh.userData = { id: sun.id, type: 'sun', name: sun.name };
+            this.scene.add(mesh);
+            this.objects3D.set(sun.id, mesh);
+        });
+
+        // Create planets
+        this.planets.forEach(planet => {
+            const geometry = new THREE.SphereGeometry(planet.radius * 0.6, 32, 32);
+            const color = new THREE.Color(planet.color.main);
+            const material = new THREE.MeshPhongMaterial({
+                color: color,
+                shininess: 50
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+
+            // Add ring for some planets
+            if (planet.id % 3 === 0) {
+                const ringGeometry = new THREE.RingGeometry(
+                    planet.radius * 0.8,
+                    planet.radius * 1.2,
+                    32
+                );
+                const ringMaterial = new THREE.MeshBasicMaterial({
+                    color: 0xffffff,
+                    transparent: true,
+                    opacity: 0.3,
+                    side: THREE.DoubleSide
+                });
+                const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+                ring.rotation.x = Math.PI / 2;
+                mesh.add(ring);
             }
 
-            if (!moon.stations) {
-                moon.stations = [];
+            // Position
+            const x = (planet.x - centerX) * scaleFactor;
+            const z = (planet.y - centerY) * scaleFactor;
+            mesh.position.set(x, 0, z);
+
+            mesh.userData = { id: planet.id, type: 'planet', name: planet.name };
+            this.scene.add(mesh);
+            this.objects3D.set(planet.id, mesh);
+        });
+
+        // Create moons
+        this.moons.forEach(moon => {
+            const geometry = new THREE.SphereGeometry(moon.radius * 0.5, 32, 32);
+            const color = new THREE.Color(moon.color.main);
+            const material = new THREE.MeshPhongMaterial({
+                color: color,
+                shininess: 30
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+
+            // Position
+            const x = (moon.x - centerX) * scaleFactor;
+            const z = (moon.y - centerY) * scaleFactor;
+            mesh.position.set(x, 0, z);
+
+            mesh.userData = { id: moon.id, type: 'moon', name: moon.name };
+            this.scene.add(mesh);
+            this.objects3D.set(moon.id, mesh);
+        });
+
+        // Create connections
+        this.connections.forEach(conn => {
+            const fromMesh = this.objects3D.get(conn.from);
+            const toMesh = this.objects3D.get(conn.to);
+
+            if (fromMesh && toMesh) {
+                const points = [
+                    fromMesh.position.clone(),
+                    toMesh.position.clone()
+                ];
+
+                const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                const material = new THREE.LineBasicMaterial({
+                    color: 0x6366f1,
+                    transparent: true,
+                    opacity: 0.6
+                });
+
+                const line = new THREE.Line(geometry, material);
+                line.userData = { from: conn.from, to: conn.to };
+                this.scene.add(line);
+                this.connectionLines.push(line);
+            }
+        });
+    }
+
+    createSpaceship() {
+        // Create a simple spaceship shape
+        const group = new THREE.Group();
+
+        // Main body
+        const bodyGeometry = new THREE.ConeGeometry(5, 20, 8);
+        const bodyMaterial = new THREE.MeshPhongMaterial({
+            color: 0x10b981,
+            shininess: 100
+        });
+        const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+        body.rotation.x = Math.PI / 2;
+        group.add(body);
+
+        // Wings
+        const wingGeometry = new THREE.BoxGeometry(20, 2, 8);
+        const wingMaterial = new THREE.MeshPhongMaterial({
+            color: 0x059669,
+            shininess: 80
+        });
+        const wings = new THREE.Mesh(wingGeometry, wingMaterial);
+        wings.position.z = 5;
+        group.add(wings);
+
+        // Engine glow
+        const engineGeometry = new THREE.SphereGeometry(3, 16, 16);
+        const engineMaterial = new THREE.MeshBasicMaterial({
+            color: 0x34d399,
+            transparent: true,
+            opacity: 0.8
+        });
+        const engine = new THREE.Mesh(engineGeometry, engineMaterial);
+        engine.position.z = 12;
+        group.add(engine);
+
+        // Position at first object or center
+        if (this.suns.length > 0 || this.planets.length > 0 || this.moons.length > 0) {
+            const firstObj = this.suns[0] || this.planets[0] || this.moons[0];
+            const mesh = this.objects3D.get(firstObj.id);
+            if (mesh) {
+                group.position.copy(mesh.position);
+                group.position.y = 30;
+            }
+        }
+
+        this.spaceship = group;
+        this.spaceshipPosition = group.position.clone();
+        this.scene.add(group);
+    }
+
+    setupOrbitControls() {
+        // Camera controls for external view
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        this.cameraTheta = 0;
+        this.cameraPhi = Math.PI / 4;
+        this.cameraRadius = 500;
+
+        this.renderer.domElement.addEventListener('mousedown', (e) => {
+            if (e.button === 0 && !this.isCockpitView) {
+                isDragging = true;
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            }
+        });
+
+        this.renderer.domElement.addEventListener('mousemove', (e) => {
+            if (!isDragging || this.isCockpitView) return;
+
+            const deltaX = e.clientX - previousMousePosition.x;
+            const deltaY = e.clientY - previousMousePosition.y;
+
+            this.cameraTheta += deltaX * 0.01;
+            this.cameraPhi = Math.max(0.1, Math.min(Math.PI - 0.1, this.cameraPhi + deltaY * 0.01));
+
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+
+        this.renderer.domElement.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        this.renderer.domElement.addEventListener('wheel', (e) => {
+            if (!this.isCockpitView) {
+                this.cameraRadius = Math.max(100, Math.min(2000, this.cameraRadius + e.deltaY));
+            }
+        });
+    }
+
+    updateShipMovement() {
+        if (!this.spaceship || this.travelPath) return;
+
+        // Rotation
+        if (this.keys.a) this.shipRotation += 0.03;
+        if (this.keys.d) this.shipRotation -= 0.03;
+
+        // Speed
+        if (this.keys.w) {
+            this.shipSpeed = Math.min(this.shipSpeed + 0.5, 15);
+        } else if (this.keys.s) {
+            this.shipSpeed = Math.max(this.shipSpeed - 0.5, -5);
+        } else {
+            // Deceleration
+            this.shipSpeed *= 0.98;
+            if (Math.abs(this.shipSpeed) < 0.1) this.shipSpeed = 0;
+        }
+
+        // Apply rotation
+        this.spaceship.rotation.y = this.shipRotation;
+
+        // Calculate direction
+        const direction = new THREE.Vector3(
+            -Math.sin(this.shipRotation),
+            0,
+            -Math.cos(this.shipRotation)
+        );
+
+        // Move spaceship
+        this.spaceship.position.add(direction.multiplyScalar(this.shipSpeed));
+
+        // Update HUD
+        const speedKms = Math.abs(this.shipSpeed * 100).toFixed(0);
+        document.getElementById('hudSpeed').textContent = `${speedKms} km/s`;
+
+        // Find nearest object and update HUD target
+        this.updateNearestTarget();
+    }
+
+    updateNearestTarget() {
+        if (!this.spaceship) return;
+
+        let nearest = null;
+        let minDist = Infinity;
+
+        this.objects3D.forEach((mesh, id) => {
+            const dist = this.spaceship.position.distanceTo(mesh.position);
+            if (dist < minDist) {
+                minDist = dist;
+                nearest = this.getObjectById(id);
+            }
+        });
+
+        const hudTarget = document.getElementById('hudTarget');
+        if (nearest && minDist < 200) {
+            hudTarget.textContent = `${nearest.name}\n${minDist.toFixed(0)}m`;
+            hudTarget.style.color = '#34d399';
+        } else if (nearest) {
+            hudTarget.textContent = `${nearest.name}\n${minDist.toFixed(0)}m`;
+            hudTarget.style.color = '#a78bfa';
+        } else {
+            hudTarget.textContent = 'Kein Ziel';
+            hudTarget.style.color = '#a78bfa';
+        }
+    }
+
+    updateCamera() {
+        if (!this.camera || !this.spaceship) return;
+
+        if (this.isCockpitView) {
+            // First-person cockpit camera
+            const offset = new THREE.Vector3(0, 8, 0);
+            offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.shipRotation);
+
+            this.camera.position.copy(this.spaceship.position).add(offset);
+
+            // Look direction
+            const lookDir = new THREE.Vector3(
+                -Math.sin(this.shipRotation),
+                0,
+                -Math.cos(this.shipRotation)
+            );
+            const lookAt = this.camera.position.clone().add(lookDir.multiplyScalar(100));
+            this.camera.lookAt(lookAt);
+        } else {
+            // External orbit camera
+            const target = this.spaceship.position;
+            this.camera.position.x = target.x + this.cameraRadius * Math.sin(this.cameraPhi) * Math.cos(this.cameraTheta);
+            this.camera.position.y = target.y + this.cameraRadius * Math.cos(this.cameraPhi);
+            this.camera.position.z = target.z + this.cameraRadius * Math.sin(this.cameraPhi) * Math.sin(this.cameraTheta);
+            this.camera.lookAt(target);
+        }
+    }
+
+    on3DClick(e) {
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        const mouse = new THREE.Vector2(
+            ((e.clientX - rect.left) / rect.width) * 2 - 1,
+            -((e.clientY - rect.top) / rect.height) * 2 + 1
+        );
+
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(mouse, this.camera);
+
+        const meshes = Array.from(this.objects3D.values());
+        const intersects = raycaster.intersectObjects(meshes, true);
+
+        if (intersects.length > 0) {
+            let obj = intersects[0].object;
+            // Find parent with userData
+            while (obj && !obj.userData.id) {
+                obj = obj.parent;
             }
 
-            moon.stations.push({
-                id: this.nextId++,
-                type: stationType,
-                name: file.name,
-                data: fileData
+            if (obj && obj.userData.id) {
+                this.selectTarget(obj.userData.id);
+            }
+        }
+    }
+
+    selectTarget(id) {
+        this.selectedObject = id;
+        const obj = this.getObjectById(id);
+        const mesh = this.objects3D.get(id);
+
+        if (obj && mesh) {
+            // Check if there's a valid path from current position
+            const currentId = this.findNearestObjectId();
+            const hasPath = this.findPath(currentId, id);
+
+            const targetInfo = document.getElementById('targetInfo');
+            const startBtn = document.getElementById('startTravel');
+
+            if (hasPath && currentId !== id) {
+                targetInfo.textContent = `Ziel: ${obj.name}`;
+                targetInfo.style.color = '#34d399';
+                startBtn.disabled = false;
+                this.travelTarget = id;
+            } else if (currentId === id) {
+                targetInfo.textContent = `Bereits bei: ${obj.name}`;
+                targetInfo.style.color = '#fbbf24';
+                startBtn.disabled = true;
+            } else {
+                targetInfo.textContent = `Keine Verbindung zu: ${obj.name}`;
+                targetInfo.style.color = '#ef4444';
+                startBtn.disabled = true;
+            }
+
+            // Highlight selected object
+            this.objects3D.forEach((m, id) => {
+                if (m.userData.originalScale) {
+                    m.scale.copy(m.userData.originalScale);
+                }
             });
 
-            this.createParticles(moon.x, moon.y, 15);
-            this.saveData();
-        };
-
-        reader.readAsDataURL(file);
-        this.dropTarget = null;
+            mesh.userData.originalScale = mesh.scale.clone();
+            mesh.scale.multiplyScalar(1.3);
+        }
     }
 
-    getMoonAt(x, y) {
-        for (const moon of this.moons) {
-            const dist = Math.hypot(x - moon.x, y - moon.y);
-            if (dist <= moon.radius) return moon;
+    findNearestObjectId() {
+        if (!this.spaceship) return null;
+
+        let nearest = null;
+        let minDist = Infinity;
+
+        this.objects3D.forEach((mesh, id) => {
+            const dist = this.spaceship.position.distanceTo(mesh.position);
+            if (dist < minDist) {
+                minDist = dist;
+                nearest = id;
+            }
+        });
+
+        return nearest;
+    }
+
+    findPath(fromId, toId) {
+        if (!fromId || !toId) return null;
+
+        // BFS to find path
+        const visited = new Set();
+        const queue = [[fromId]];
+
+        while (queue.length > 0) {
+            const path = queue.shift();
+            const current = path[path.length - 1];
+
+            if (current === toId) {
+                return path;
+            }
+
+            if (visited.has(current)) continue;
+            visited.add(current);
+
+            // Find connected objects
+            for (const conn of this.connections) {
+                let neighbor = null;
+                if (conn.from === current) neighbor = conn.to;
+                if (conn.to === current) neighbor = conn.from;
+
+                if (neighbor && !visited.has(neighbor)) {
+                    queue.push([...path, neighbor]);
+                }
+            }
         }
+
         return null;
     }
 
+    startTravel() {
+        const currentId = this.findNearestObjectId();
+        const path = this.findPath(currentId, this.travelTarget);
+
+        if (!path || path.length < 2) return;
+
+        this.travelPath = path;
+        this.travelProgress = 0;
+        this.currentPathSegment = 0;
+
+        document.getElementById('startTravel').disabled = true;
+        document.getElementById('travelProgress').classList.remove('hidden');
+    }
+
+    updateTravel() {
+        if (!this.travelPath || this.currentPathSegment >= this.travelPath.length - 1) {
+            return;
+        }
+
+        const fromId = this.travelPath[this.currentPathSegment];
+        const toId = this.travelPath[this.currentPathSegment + 1];
+
+        const fromMesh = this.objects3D.get(fromId);
+        const toMesh = this.objects3D.get(toId);
+
+        if (!fromMesh || !toMesh) return;
+
+        // Update progress
+        this.travelProgress += 0.005;
+
+        if (this.travelProgress >= 1) {
+            this.travelProgress = 0;
+            this.currentPathSegment++;
+
+            if (this.currentPathSegment >= this.travelPath.length - 1) {
+                // Travel complete
+                this.travelPath = null;
+                document.getElementById('travelProgress').classList.add('hidden');
+                document.getElementById('targetInfo').textContent = 'Reise abgeschlossen!';
+                document.getElementById('targetInfo').style.color = '#34d399';
+                return;
+            }
+        }
+
+        // Interpolate position
+        const from = fromMesh.position;
+        const to = toMesh.position;
+
+        this.spaceship.position.lerpVectors(from, to, this.travelProgress);
+        this.spaceship.position.y = 30 + Math.sin(this.travelProgress * Math.PI) * 20;
+
+        // Rotate spaceship towards target
+        const direction = new THREE.Vector3().subVectors(to, from).normalize();
+        this.spaceship.lookAt(
+            this.spaceship.position.x + direction.x,
+            this.spaceship.position.y,
+            this.spaceship.position.z + direction.z
+        );
+        this.spaceship.rotation.x = 0;
+
+        // Update progress UI
+        const totalProgress = (this.currentPathSegment + this.travelProgress) / (this.travelPath.length - 1);
+        document.getElementById('progressFill').style.width = `${totalProgress * 100}%`;
+        document.getElementById('progressText').textContent = `${Math.round(totalProgress * 100)}%`;
+
+        // Update HUD during travel
+        const speedKms = Math.abs((this.travelProgress * 1500)).toFixed(0);
+        document.getElementById('hudSpeed').textContent = `${speedKms} km/s`;
+    }
+
+    animate3D() {
+        if (!this.is3DMode || !this.renderer) return;
+
+        requestAnimationFrame(() => this.animate3D());
+
+        // Update ship movement (manual control)
+        this.updateShipMovement();
+
+        // Update travel (automatic path following)
+        this.updateTravel();
+
+        // Update camera position
+        this.updateCamera();
+
+        // Rotate suns
+        this.suns.forEach(sun => {
+            const mesh = this.objects3D.get(sun.id);
+            if (mesh) {
+                mesh.rotation.y += 0.005;
+            }
+        });
+
+        // Rotate planets
+        this.planets.forEach(planet => {
+            const mesh = this.objects3D.get(planet.id);
+            if (mesh) {
+                mesh.rotation.y += planet.rotationSpeed;
+            }
+        });
+
+        // Animate connection lines
+        this.connectionLines.forEach((line, i) => {
+            line.material.opacity = 0.4 + Math.sin(this.time * 3 + i) * 0.2;
+        });
+
+        // Spaceship engine pulse
+        if (this.spaceship) {
+            const engine = this.spaceship.children[2];
+            if (engine) {
+                engine.material.opacity = 0.6 + Math.sin(this.time * 10) * 0.2;
+                engine.scale.setScalar(1 + Math.sin(this.time * 10) * 0.1);
+            }
+        }
+
+        this.renderer.render(this.scene, this.camera);
+    }
+
+    // Data persistence
+    saveData() {
+        const data = {
+            suns: this.suns,
+            planets: this.planets,
+            moons: this.moons,
+            connections: this.connections,
+            nextId: this.nextId
+        };
+        localStorage.setItem('orgaversum', JSON.stringify(data));
+
+        // Update retro list
+        this.updateRetroList();
+    }
+
+    loadData() {
+        const saved = localStorage.getItem('orgaversum');
+        if (saved) {
+            try {
+                const data = JSON.parse(saved);
+                this.suns = data.suns || [];
+                this.planets = data.planets || [];
+                this.moons = data.moons || [];
+                this.connections = data.connections || [];
+                this.nextId = data.nextId || 1;
+            } catch (e) {
+                console.error('Failed to load data:', e);
+            }
+        }
+
+        // Update retro list after loading
+        this.updateRetroList();
+    }
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    new Orgaversum();
+});
