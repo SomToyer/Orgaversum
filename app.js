@@ -515,6 +515,7 @@ class Orgaversum {
                 // If connecting moon to planet, set moon's color to planet's color
                 let moon = null;
                 let planet = null;
+                let sun = null;
 
                 if (this.connectFirst.type === 'moon' && obj.type === 'planet') {
                     moon = this.connectFirst;
@@ -522,10 +523,37 @@ class Orgaversum {
                 } else if (this.connectFirst.type === 'planet' && obj.type === 'moon') {
                     planet = this.connectFirst;
                     moon = obj;
+                } else if (this.connectFirst.type === 'planet' && obj.type === 'sun') {
+                    planet = this.connectFirst;
+                    sun = obj;
+                } else if (this.connectFirst.type === 'sun' && obj.type === 'planet') {
+                    sun = this.connectFirst;
+                    planet = obj;
                 }
 
+                // Set moon color to planet color
                 if (moon && planet && !moon.colorManuallySet) {
                     moon.color = { ...planet.color };
+                }
+
+                // Set planet color to sun color
+                if (planet && sun && !planet.colorManuallySet) {
+                    planet.color = { ...sun.color };
+
+                    // Update all connected moons to match planet's new color
+                    this.connections.forEach(conn => {
+                        let connectedMoon = null;
+                        if (conn.from === planet.id) {
+                            const obj = this.getObjectById(conn.to);
+                            if (obj && obj.type === 'moon') connectedMoon = obj;
+                        } else if (conn.to === planet.id) {
+                            const obj = this.getObjectById(conn.from);
+                            if (obj && obj.type === 'moon') connectedMoon = obj;
+                        }
+                        if (connectedMoon && !connectedMoon.colorManuallySet) {
+                            connectedMoon.color = { ...planet.color };
+                        }
+                    });
                 }
             }
 
@@ -617,8 +645,8 @@ class Orgaversum {
             glow: this.hexToRgba(colorValue, 0.3)
         };
 
-        // Mark color as manually set if changed
-        if (oldColor !== colorValue && this.editingObj.type === 'moon') {
+        // Mark color as manually set if changed (for moons and planets)
+        if (oldColor !== colorValue && (this.editingObj.type === 'moon' || this.editingObj.type === 'planet')) {
             this.editingObj.colorManuallySet = true;
         }
 
@@ -1531,24 +1559,18 @@ class Orgaversum {
         // Draw name in the CENTER/MIDDLE of the object
         const y = obj.y;
 
-        // Background
-        const metrics = ctx.measureText(obj.name);
-        const padding = 8;
-
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        ctx.fillRect(
-            obj.x - metrics.width / 2 - padding,
-            y - fontSize / 2 - padding / 2,
-            metrics.width + padding * 2,
-            fontSize + padding
-        );
-
-        // Text with glow
-        ctx.shadowColor = obj.color.main;
-        ctx.shadowBlur = 10;
-        ctx.fillStyle = '#fff';
+        // Text with black shadow for better readability
+        ctx.shadowColor = '#000000';
+        ctx.shadowBlur = 8;
+        ctx.shadowOffsetX = 2;
+        ctx.shadowOffsetY = 2;
+        ctx.fillStyle = '#ffffff';
         ctx.fillText(obj.name, obj.x, y);
+
+        // Reset shadow
         ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
     }
 
     drawParticles() {
