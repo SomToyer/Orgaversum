@@ -173,6 +173,7 @@ class Orgaversum {
         document.getElementById('statusTerraformed').addEventListener('click', () => this.setRocketStatus('terraformed'));
         document.getElementById('statusWaiting').addEventListener('click', () => this.setRocketStatus('waiting'));
         document.getElementById('statusRemove').addEventListener('click', () => this.setRocketStatus('remove'));
+        document.getElementById('statusCancel').addEventListener('click', () => this.hideRocketStatusModal());
 
         // Canvas drag and drop for files
         this.canvas.addEventListener('dragover', (e) => {
@@ -853,16 +854,26 @@ class Orgaversum {
         if (!this.statusModalMoon) return;
 
         const moon = this.statusModalMoon;
+        const rocketIndex = this.flyingRockets.findIndex(r => r.target.id === moon.id);
 
         if (status === 'terraformed') {
             moon.rocketStatus = 'terraformed';
             this.createParticles(moon.x, moon.y, 30);
+
+            // Send rocket back to base
+            if (rocketIndex !== -1) {
+                this.returnRocketToBase(rocketIndex);
+            }
         } else if (status === 'waiting') {
             moon.rocketStatus = 'waiting';
             this.createParticles(moon.x, moon.y, 20);
+
+            // Send rocket back to base
+            if (rocketIndex !== -1) {
+                this.returnRocketToBase(rocketIndex);
+            }
         } else if (status === 'remove') {
-            // Remove the rocket
-            const rocketIndex = this.flyingRockets.findIndex(r => r.target.id === moon.id);
+            // Remove the rocket immediately
             if (rocketIndex !== -1) {
                 this.flyingRockets.splice(rocketIndex, 1);
             }
@@ -872,6 +883,18 @@ class Orgaversum {
 
         this.saveData();
         this.hideRocketStatusModal();
+    }
+
+    returnRocketToBase(rocketIndex) {
+        const rocket = this.flyingRockets[rocketIndex];
+
+        // Set rocket to return mode
+        rocket.returning = true;
+        rocket.returnProgress = 0;
+        rocket.returnStartX = rocket.target.x;
+        rocket.returnStartY = rocket.target.y;
+        rocket.returnEndX = 20;
+        rocket.returnEndY = window.innerHeight / 2;
     }
 
     deleteStation() {
@@ -1696,8 +1719,17 @@ class Orgaversum {
 
     updateFlyingRockets() {
         // Update all flying rockets
-        this.flyingRockets.forEach(rocket => {
-            if (!rocket.orbiting) {
+        this.flyingRockets = this.flyingRockets.filter(rocket => {
+            if (rocket.returning) {
+                // Returning to base
+                rocket.returnProgress += 0.01;
+
+                if (rocket.returnProgress >= 1) {
+                    // Rocket arrived at base, remove it
+                    this.createParticles(20, window.innerHeight / 2, 15);
+                    return false; // Remove from array
+                }
+            } else if (!rocket.orbiting) {
                 // Flying to target - slower speed (0.01 instead of 0.02)
                 rocket.progress += 0.01;
 
@@ -1711,6 +1743,7 @@ class Orgaversum {
                 // Orbiting around target - slower speed (0.015 instead of 0.03)
                 rocket.orbitAngle += 0.015;
             }
+            return true; // Keep in array
         });
     }
 
@@ -1719,7 +1752,34 @@ class Orgaversum {
         this.flyingRockets.forEach(rocket => {
             this.ctx.save();
 
-            if (!rocket.orbiting) {
+            if (rocket.returning) {
+                // Returning to base
+                const { returnStartX, returnStartY, returnEndX, returnEndY, returnProgress, color } = rocket;
+
+                // Convert to screen coordinates
+                const screenStart = this.getScreenPos(returnStartX, returnStartY);
+                const screenEnd = { x: returnEndX, y: returnEndY };
+
+                // Interpolate position with parabolic arc
+                const currentX = screenStart.x + (screenEnd.x - screenStart.x) * returnProgress;
+                const currentY = screenStart.y + (screenEnd.y - screenStart.y) * returnProgress - Math.sin(returnProgress * Math.PI) * 100;
+
+                // Draw rocket
+                this.ctx.font = '30px Arial';
+                this.ctx.fillText('🚀', currentX - 15, currentY + 15);
+
+                // Draw trail
+                for (let i = 0; i < 5; i++) {
+                    const trailProgress = Math.max(0, returnProgress - i * 0.05);
+                    const trailX = screenStart.x + (screenEnd.x - screenStart.x) * trailProgress;
+                    const trailY = screenStart.y + (screenEnd.y - screenStart.y) * trailProgress - Math.sin(trailProgress * Math.PI) * 100;
+
+                    this.ctx.beginPath();
+                    this.ctx.arc(trailX, trailY, 3, 0, Math.PI * 2);
+                    this.ctx.fillStyle = color + Math.floor((1 - i * 0.2) * 255).toString(16).padStart(2, '0');
+                    this.ctx.fill();
+                }
+            } else if (!rocket.orbiting) {
                 // Flying to target
                 const { startX, startY, endX, endY, progress, color } = rocket;
 
