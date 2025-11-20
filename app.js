@@ -1155,29 +1155,33 @@ class Orgaversum {
         const isHovered = this.hovering === sun;
         const isConnecting = this.connectFirst === sun;
 
+        // In galaxy view, make suns much larger for visibility
+        const galaxyScale = this.galaxyView ? 8 : 1;
+        const displayRadius = sun.radius * galaxyScale;
+
         // Pulsing effect
         const pulse = Math.sin(this.time * 2 + sun.pulsePhase) * 0.1 + 1;
 
         // Outer glow (corona)
-        const coronaSize = sun.radius * 0.8;
+        const coronaSize = displayRadius * 0.8;
         for (let i = 3; i >= 0; i--) {
             const gradient = ctx.createRadialGradient(
-                sun.x, sun.y, sun.radius * 0.5,
-                sun.x, sun.y, sun.radius + coronaSize * (i + 1) * 0.3 * pulse
+                sun.x, sun.y, displayRadius * 0.5,
+                sun.x, sun.y, displayRadius + coronaSize * (i + 1) * 0.3 * pulse
             );
             gradient.addColorStop(0, `rgba(255, 200, 50, ${0.3 - i * 0.07})`);
             gradient.addColorStop(1, 'transparent');
 
             ctx.beginPath();
-            ctx.arc(sun.x, sun.y, sun.radius + coronaSize * (i + 1) * 0.3 * pulse, 0, Math.PI * 2);
+            ctx.arc(sun.x, sun.y, displayRadius + coronaSize * (i + 1) * 0.3 * pulse, 0, Math.PI * 2);
             ctx.fillStyle = gradient;
             ctx.fill();
         }
 
         // Sun body
         const bodyGradient = ctx.createRadialGradient(
-            sun.x - sun.radius * 0.2, sun.y - sun.radius * 0.2, 0,
-            sun.x, sun.y, sun.radius
+            sun.x - displayRadius * 0.2, sun.y - displayRadius * 0.2, 0,
+            sun.x, sun.y, displayRadius
         );
         bodyGradient.addColorStop(0, '#fff5e0');
         bodyGradient.addColorStop(0.3, sun.color.main);
@@ -1185,36 +1189,38 @@ class Orgaversum {
         bodyGradient.addColorStop(1, this.darkenColor(sun.color.main, 30));
 
         ctx.beginPath();
-        ctx.arc(sun.x, sun.y, sun.radius, 0, Math.PI * 2);
+        ctx.arc(sun.x, sun.y, displayRadius, 0, Math.PI * 2);
         ctx.fillStyle = bodyGradient;
         ctx.fill();
 
-        // Solar flares
-        ctx.save();
-        ctx.translate(sun.x, sun.y);
-        for (let i = 0; i < 8; i++) {
-            const angle = (Math.PI * 2 / 8) * i + this.time * 0.2;
-            const flareLength = sun.radius * 0.3 * (Math.sin(this.time * 3 + i) * 0.3 + 0.7);
+        // Solar flares (only in normal view)
+        if (!this.galaxyView) {
+            ctx.save();
+            ctx.translate(sun.x, sun.y);
+            for (let i = 0; i < 8; i++) {
+                const angle = (Math.PI * 2 / 8) * i + this.time * 0.2;
+                const flareLength = displayRadius * 0.3 * (Math.sin(this.time * 3 + i) * 0.3 + 0.7);
 
-            ctx.beginPath();
-            ctx.moveTo(
-                Math.cos(angle) * sun.radius * 0.9,
-                Math.sin(angle) * sun.radius * 0.9
-            );
-            ctx.lineTo(
-                Math.cos(angle) * (sun.radius + flareLength),
-                Math.sin(angle) * (sun.radius + flareLength)
-            );
-            ctx.strokeStyle = `rgba(255, 200, 100, ${0.5 + Math.sin(this.time * 3 + i) * 0.3})`;
-            ctx.lineWidth = 3;
-            ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(
+                    Math.cos(angle) * displayRadius * 0.9,
+                    Math.sin(angle) * displayRadius * 0.9
+                );
+                ctx.lineTo(
+                    Math.cos(angle) * (displayRadius + flareLength),
+                    Math.sin(angle) * (displayRadius + flareLength)
+                );
+                ctx.strokeStyle = `rgba(255, 200, 100, ${0.5 + Math.sin(this.time * 3 + i) * 0.3})`;
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            }
+            ctx.restore();
         }
-        ctx.restore();
 
-        // Highlight if hovered or connecting
-        if (isHovered || isConnecting) {
+        // Highlight if hovered or connecting (only in normal view)
+        if (!this.galaxyView && (isHovered || isConnecting)) {
             ctx.beginPath();
-            ctx.arc(sun.x, sun.y, sun.radius + 8, 0, Math.PI * 2);
+            ctx.arc(sun.x, sun.y, displayRadius + 8, 0, Math.PI * 2);
             ctx.strokeStyle = isConnecting ? '#f59e0b' : '#fff';
             ctx.lineWidth = 3;
             ctx.stroke();
@@ -1562,7 +1568,12 @@ class Orgaversum {
     drawLabel(obj) {
         const ctx = this.ctx;
         const fontSizes = { sun: 28, planet: 24, moon: 18 };
-        const fontSize = fontSizes[obj.type] || 18;
+        let fontSize = fontSizes[obj.type] || 18;
+
+        // In galaxy view, make sun labels much larger
+        if (this.galaxyView && obj.type === 'sun') {
+            fontSize = fontSize * 6; // Scale up for galaxy view
+        }
 
         ctx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`;
         ctx.textAlign = 'center';
@@ -1573,9 +1584,9 @@ class Orgaversum {
 
         // Text with black shadow for better readability
         ctx.shadowColor = '#000000';
-        ctx.shadowBlur = 8;
-        ctx.shadowOffsetX = 2;
-        ctx.shadowOffsetY = 2;
+        ctx.shadowBlur = this.galaxyView ? 20 : 8;
+        ctx.shadowOffsetX = this.galaxyView ? 4 : 2;
+        ctx.shadowOffsetY = this.galaxyView ? 4 : 2;
         ctx.fillStyle = '#ffffff';
         ctx.fillText(obj.name, obj.x, y);
 
