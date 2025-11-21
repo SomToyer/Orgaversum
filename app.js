@@ -1717,6 +1717,7 @@ class Orgaversum {
                     <span class="retro-item-icon">☀</span>
                     <span class="retro-item-name">${sun.name}</span>
                     <div class="retro-item-actions">
+                        <button class="retro-action retro-add-child" title="Hinzufügen">+</button>
                         <button class="retro-action retro-focus" title="Fokus">◎</button>
                         <button class="retro-action retro-edit" title="Bearbeiten">✎</button>
                         <button class="retro-action retro-delete" title="Löschen">×</button>
@@ -1745,6 +1746,7 @@ class Orgaversum {
                     <span class="retro-item-icon">●</span>
                     <span class="retro-item-name">${planet.name}</span>
                     <div class="retro-item-actions">
+                        <button class="retro-action retro-add-child" title="Hinzufügen">+</button>
                         <button class="retro-action retro-focus" title="Fokus">◎</button>
                         <button class="retro-action retro-edit" title="Bearbeiten">✎</button>
                         <button class="retro-action retro-delete" title="Löschen">×</button>
@@ -1824,6 +1826,17 @@ class Orgaversum {
     attachRetroListeners() {
         const container = document.getElementById('retroList');
         if (!container) return;
+
+        // Add child buttons
+        container.querySelectorAll('.retro-add-child').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const item = btn.closest('.retro-item');
+                const id = parseInt(item.dataset.id);
+                const type = item.dataset.type;
+                this.addChildToObject(id, type);
+            });
+        });
 
         // Focus buttons
         container.querySelectorAll('.retro-focus').forEach(btn => {
@@ -1909,6 +1922,81 @@ class Orgaversum {
 
         // Highlight effect
         this.createParticles(obj.x, obj.y, 20);
+    }
+
+    addChildToObject(parentId, parentType) {
+        const parent = this.getObjectById(parentId);
+        if (!parent) return;
+
+        let childName = '';
+        let childType = '';
+
+        // Determine child type based on parent
+        if (parentType === 'sun') {
+            childName = prompt('Name des neuen Planeten:');
+            childType = 'planet';
+        } else if (parentType === 'planet') {
+            childName = prompt('Name des neuen Mondes:');
+            childType = 'moon';
+        } else {
+            return; // Moons can't have children
+        }
+
+        if (!childName || !childName.trim()) return;
+        childName = childName.trim();
+
+        // Create child object near parent
+        const angle = Math.random() * Math.PI * 2;
+        const distance = parent.radius + 100 + Math.random() * 50;
+        const childX = parent.x + Math.cos(angle) * distance;
+        const childY = parent.y + Math.sin(angle) * distance;
+
+        let childObj;
+
+        if (childType === 'planet') {
+            const color = this.planetColors[Math.floor(Math.random() * this.planetColors.length)];
+            childObj = {
+                id: this.nextId++,
+                type: 'planet',
+                name: childName,
+                x: childX,
+                y: childY,
+                radius: 40 + Math.random() * 20,
+                color: color,
+                rotation: Math.random() * Math.PI * 2,
+                rotationSpeed: 0.001 + Math.random() * 0.002,
+                status: 'normal'
+            };
+            this.planets.push(childObj);
+        } else if (childType === 'moon') {
+            const color = this.moonColors[Math.floor(Math.random() * this.moonColors.length)];
+            childObj = {
+                id: this.nextId++,
+                type: 'moon',
+                name: childName,
+                x: childX,
+                y: childY,
+                radius: 15 + Math.random() * 10,
+                color: color,
+                phase: Math.random() * Math.PI * 2,
+                stations: [],
+                rocketStatus: 'none'
+            };
+            this.moons.push(childObj);
+        }
+
+        // Create connection between parent and child
+        this.connections.push({
+            from: parent.id,
+            to: childObj.id
+        });
+
+        // Visual effects
+        this.createParticles(childObj.x, childObj.y, 30);
+        this.createParticles(parent.x, parent.y, 20);
+
+        // Save and update
+        this.saveData();
     }
 
     // Rocket Methods
