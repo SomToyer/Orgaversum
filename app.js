@@ -1418,18 +1418,55 @@ class Orgaversum {
 
         let html = '';
 
-        // Render suns
+        // Build hierarchical structure based on connections
+        // First, render suns with their connected planets
         this.suns.forEach(sun => {
             html += this.renderRetroItem(sun, 'sun', '☀');
+
+            // Find planets connected to this sun
+            const connectedPlanets = this.getChildrenOf(sun.id, 'planet');
+            if (connectedPlanets.length > 0) {
+                html += '<div class="retro-children">';
+                connectedPlanets.forEach(planet => {
+                    html += this.renderRetroItem(planet, 'planet', '●');
+
+                    // Find moons connected to this planet
+                    const connectedMoons = this.getChildrenOf(planet.id, 'moon');
+                    if (connectedMoons.length > 0) {
+                        html += '<div class="retro-children">';
+                        connectedMoons.forEach(moon => {
+                            html += this.renderRetroMoon(moon);
+                        });
+                        html += '</div>';
+                    }
+                });
+                html += '</div>';
+            }
         });
 
-        // Render planets
-        this.planets.forEach(planet => {
+        // Render orphaned planets (not connected to any sun)
+        const orphanedPlanets = this.planets.filter(planet =>
+            !this.connections.some(c => c.to === planet.id && this.getObjectById(c.from)?.type === 'sun')
+        );
+        orphanedPlanets.forEach(planet => {
             html += this.renderRetroItem(planet, 'planet', '●');
+
+            // Find moons connected to this orphaned planet
+            const connectedMoons = this.getChildrenOf(planet.id, 'moon');
+            if (connectedMoons.length > 0) {
+                html += '<div class="retro-children">';
+                connectedMoons.forEach(moon => {
+                    html += this.renderRetroMoon(moon);
+                });
+                html += '</div>';
+            }
         });
 
-        // Render moons with their stations
-        this.moons.forEach(moon => {
+        // Render orphaned moons (not connected to any planet)
+        const orphanedMoons = this.moons.filter(moon =>
+            !this.connections.some(c => c.to === moon.id && this.getObjectById(c.from)?.type === 'planet')
+        );
+        orphanedMoons.forEach(moon => {
             html += this.renderRetroMoon(moon);
         });
 
@@ -1437,6 +1474,19 @@ class Orgaversum {
 
         // Attach event listeners
         this.attachRetroListeners();
+    }
+
+    getChildrenOf(parentId, childType) {
+        const children = [];
+        this.connections.forEach(conn => {
+            if (conn.from === parentId) {
+                const child = this.getObjectById(conn.to);
+                if (child && child.type === childType) {
+                    children.push(child);
+                }
+            }
+        });
+        return children;
     }
 
     renderRetroItem(obj, type, icon) {
