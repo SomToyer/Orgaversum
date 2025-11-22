@@ -2792,7 +2792,8 @@ class Orgaversum {
             };
             this.planets.push(childObj);
         } else if (childType === 'moon') {
-            const color = this.moonColors[Math.floor(Math.random() * this.moonColors.length)];
+            // Use parent planet's color for new moon
+            const color = parent.color;
             childObj = {
                 id: this.nextId++,
                 type: 'moon',
