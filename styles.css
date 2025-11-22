@@ -160,7 +160,7 @@ body {
 /* Raketen Auswahl */
 .rocket-selector {
     position: fixed;
-    right: 360px;
+    right: 20px;
     top: 20px;
     background: rgba(10, 10, 30, 0.9);
     border: 2px solid rgba(255, 255, 255, 0.1);
@@ -200,9 +200,10 @@ body {
     position: relative;
 }
 
-.rocket-item svg {
+.rocket-item img {
     width: 40px;
     height: 40px;
+    object-fit: contain;
 }
 
 .rocket-name {
@@ -523,10 +524,10 @@ body {
 /* Retro Computer Overlay */
 .retro-computer {
     position: fixed;
-    bottom: 20px;
+    top: 120px;
     right: 20px;
     width: 320px;
-    max-height: 600px;
+    max-height: calc(100vh - 140px);
     background: #1a1a1a;
     border-radius: 12px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 0 2px #333;
@@ -592,7 +593,7 @@ body {
 .retro-screen {
     background: #0a1a0a;
     padding: 12px;
-    max-height: 525px;
+    max-height: calc(100vh - 200px);
     overflow-y: auto;
     position: relative;
 }

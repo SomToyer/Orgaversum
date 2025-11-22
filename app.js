@@ -93,9 +93,24 @@ class Orgaversum {
 
     init() {
         this.resize();
+        this.loadRocketImages();
         this.loadData();
         this.setupEventListeners();
         this.animate();
+    }
+
+    loadRocketImages() {
+        // Preload rocket images
+        const rocketImages = {
+            'images/rocket-red.svg': new Image(),
+            'images/rocket-blue.svg': new Image(),
+            'images/rocket-green.svg': new Image()
+        };
+
+        Object.keys(rocketImages).forEach(path => {
+            rocketImages[path].src = path;
+            this.imageCache.set(path, rocketImages[path]);
+        });
     }
 
     resize() {
@@ -2819,7 +2834,8 @@ class Orgaversum {
         this.selectedRocket = {
             element: rocketElement,
             color: rocketElement.dataset.color,
-            name: rocketElement.dataset.name
+            name: rocketElement.dataset.name,
+            image: rocketElement.dataset.image
         };
     }
 
@@ -2842,6 +2858,7 @@ class Orgaversum {
             target: target,
             color: this.selectedRocket.color,
             name: this.selectedRocket.name,
+            image: this.selectedRocket.image,
             orbiting: false,
             orbitAngle: 0
         });
@@ -2898,9 +2915,15 @@ class Orgaversum {
                 const currentX = screenStart.x + (screenEnd.x - screenStart.x) * returnProgress;
                 const currentY = screenStart.y + (screenEnd.y - screenStart.y) * returnProgress - Math.sin(returnProgress * Math.PI) * 100;
 
-                // Draw rocket
-                this.ctx.font = '30px Arial';
-                this.ctx.fillText('🚀', currentX - 15, currentY + 15);
+                // Draw rocket image
+                const img = this.imageCache.get(rocket.image);
+                if (img && img.complete) {
+                    this.ctx.drawImage(img, currentX - 20, currentY - 20, 40, 40);
+                } else {
+                    // Fallback to emoji if image not loaded
+                    this.ctx.font = '30px Arial';
+                    this.ctx.fillText('🚀', currentX - 15, currentY + 15);
+                }
 
                 // Draw trail
                 for (let i = 0; i < 5; i++) {
@@ -2925,9 +2948,15 @@ class Orgaversum {
                 const currentX = screenStart.x + (screenEnd.x - screenStart.x) * progress;
                 const currentY = screenStart.y + (screenEnd.y - screenStart.y) * progress - Math.sin(progress * Math.PI) * 100;
 
-                // Draw rocket
-                this.ctx.font = '30px Arial';
-                this.ctx.fillText('🚀', currentX - 15, currentY + 15);
+                // Draw rocket image
+                const img = this.imageCache.get(rocket.image);
+                if (img && img.complete) {
+                    this.ctx.drawImage(img, currentX - 20, currentY - 20, 40, 40);
+                } else {
+                    // Fallback to emoji if image not loaded
+                    this.ctx.font = '30px Arial';
+                    this.ctx.fillText('🚀', currentX - 15, currentY + 15);
+                }
 
                 // Draw trail
                 for (let i = 0; i < 5; i++) {
@@ -2967,8 +2996,17 @@ class Orgaversum {
                 this.ctx.translate(rocketX, rocketY);
                 this.ctx.rotate(orbitAngle + Math.PI / 2);
                 this.ctx.scale(1 / this.scale, 1 / this.scale);
-                this.ctx.font = '30px Arial';
-                this.ctx.fillText('🚀', -15, 15);
+
+                // Draw rocket image
+                const img = this.imageCache.get(rocket.image);
+                if (img && img.complete) {
+                    this.ctx.drawImage(img, -20, -20, 40, 40);
+                } else {
+                    // Fallback to emoji if image not loaded
+                    this.ctx.font = '30px Arial';
+                    this.ctx.fillText('🚀', -15, 15);
+                }
+
                 this.ctx.restore();
 
                 // Draw trail particles
