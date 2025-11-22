@@ -83,6 +83,28 @@
             </div>
         </div>
 
+        <!-- Multi-Edit Modal -->
+        <div id="multiEditModal" class="modal hidden">
+            <div class="modal-content">
+                <h2>Mehrere Objekte bearbeiten</h2>
+                <p id="multiEditCount" style="color: #a78bfa; margin-bottom: 15px;">0 Objekte ausgewählt</p>
+                <div class="color-picker">
+                    <label>Farbe ändern:</label>
+                    <input type="color" id="multiColorPicker">
+                    <button id="multiApplyColor" class="btn btn-confirm" style="margin-left: 10px;">Anwenden</button>
+                </div>
+                <div class="deadline-controls" style="margin-top: 15px;">
+                    <label>Deadline setzen:</label>
+                    <input type="date" id="multiDeadlinePicker">
+                    <button id="multiApplyDeadline" class="btn btn-confirm" style="margin-left: 10px;">Anwenden</button>
+                </div>
+                <div class="modal-buttons" style="margin-top: 20px;">
+                    <button id="multiDeleteAll" class="btn btn-delete">Alle löschen</button>
+                    <button id="multiEditCancel" class="btn btn-cancel">Schließen</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Station Upload Modal -->
         <div id="stationModal" class="modal hidden">
             <div class="modal-content">

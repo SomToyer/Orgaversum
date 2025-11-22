@@ -19,9 +19,16 @@ class Orgaversum {
         this.dragging = null;
         this.hovering = null;
         this.hoveringStation = null;
+        this.selectedObject = null;
+        this.selectedObjects = [];
         this.connectMode = false;
         this.connectFirst = null;
         this.mousePos = { x: 0, y: 0 };
+
+        // Box selection state
+        this.isBoxSelecting = false;
+        this.boxStart = null;
+        this.boxEnd = null;
 
         // Zoom and pan state
         this.scale = 1;
@@ -168,6 +175,18 @@ class Orgaversum {
             rocket.addEventListener('click', () => this.selectRocket(rocket));
         });
 
+        // Rocket Status Modal
+        document.getElementById('statusTerraformed').addEventListener('click', () => this.setRocketStatus('terraformed'));
+        document.getElementById('statusWaiting').addEventListener('click', () => this.setRocketStatus('waiting'));
+        document.getElementById('statusRemove').addEventListener('click', () => this.setRocketStatus('remove'));
+        document.getElementById('statusCancel').addEventListener('click', () => this.hideRocketStatusModal());
+
+        // Multi-Edit Modal
+        document.getElementById('multiApplyColor').addEventListener('click', () => this.applyMultiColor());
+        document.getElementById('multiApplyDeadline').addEventListener('click', () => this.applyMultiDeadline());
+        document.getElementById('multiDeleteAll').addEventListener('click', () => this.deleteMultiSelected());
+        document.getElementById('multiEditCancel').addEventListener('click', () => this.hideMultiEditModal());
+
         // Canvas drag and drop for files
         this.canvas.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -225,13 +244,48 @@ class Orgaversum {
         if (this.connectMode && obj) {
             this.handleConnect(obj);
         } else if (obj) {
+            // Clicking on an object
+            if (e.shiftKey) {
+                // Shift+Click: toggle selection
+                const index = this.selectedObjects.indexOf(obj);
+                if (index > -1) {
+                    this.selectedObjects.splice(index, 1);
+                } else {
+                    this.selectedObjects.push(obj);
+                }
+            } else {
+                // Normal click: select only this object (unless already in multi-selection)
+                if (!this.selectedObjects.includes(obj)) {
+                    this.selectedObjects = [obj];
+                }
+            }
+
+            // Start dragging selected objects
             this.dragging = obj;
             this.dragging.offsetX = pos.x - obj.x;
             this.dragging.offsetY = pos.y - obj.y;
+
+            // Store initial positions for all selected objects
+            this.selectedObjects.forEach(selectedObj => {
+                selectedObj.dragStartX = selectedObj.x;
+                selectedObj.dragStartY = selectedObj.y;
+            });
+
+            this.selectedObject = obj; // For backward compatibility
         } else {
-            // Pan when clicking on empty space
-            this.isPanning = true;
-            this.lastPanPos = { x: screenX, y: screenY };
+            // Clicking on empty space
+            if (e.shiftKey) {
+                // Shift+Click on empty: start box selection
+                this.isBoxSelecting = true;
+                this.boxStart = { x: pos.x, y: pos.y };
+                this.boxEnd = { x: pos.x, y: pos.y };
+            } else {
+                // Normal click on empty: pan and deselect
+                this.isPanning = true;
+                this.lastPanPos = { x: screenX, y: screenY };
+                this.selectedObjects = [];
+                this.selectedObject = null;
+            }
         }
     }
 
@@ -251,9 +305,29 @@ class Orgaversum {
         const pos = this.getMousePos(e);
         this.mousePos = pos;
 
+        if (this.isBoxSelecting) {
+            // Update box selection end point
+            this.boxEnd = { x: pos.x, y: pos.y };
+            this.canvas.style.cursor = 'crosshair';
+            return;
+        }
+
         if (this.dragging) {
-            this.dragging.x = pos.x - this.dragging.offsetX;
-            this.dragging.y = pos.y - this.dragging.offsetY;
+            // Calculate the delta movement
+            const deltaX = (pos.x - this.dragging.offsetX) - this.dragging.x;
+            const deltaY = (pos.y - this.dragging.offsetY) - this.dragging.y;
+
+            // Move all selected objects
+            this.selectedObjects.forEach(obj => {
+                const newX = obj.dragStartX + deltaX;
+                const newY = obj.dragStartY + deltaY;
+
+                // Check collision and adjust position if needed
+                const adjustedPos = this.resolveCollision(obj, newX, newY);
+                obj.x = adjustedPos.x;
+                obj.y = adjustedPos.y;
+            });
+
             this.saveData();
         } else {
             // Check for station hover
@@ -266,8 +340,33 @@ class Orgaversum {
     }
 
     onMouseUp() {
+        if (this.isBoxSelecting) {
+            // Finalize box selection
+            this.selectObjectsInBox();
+            this.isBoxSelecting = false;
+            this.boxStart = null;
+            this.boxEnd = null;
+        }
+
         this.dragging = null;
         this.isPanning = false;
+    }
+
+    selectObjectsInBox() {
+        if (!this.boxStart || !this.boxEnd) return;
+
+        const minX = Math.min(this.boxStart.x, this.boxEnd.x);
+        const maxX = Math.max(this.boxStart.x, this.boxEnd.x);
+        const minY = Math.min(this.boxStart.y, this.boxEnd.y);
+        const maxY = Math.max(this.boxStart.y, this.boxEnd.y);
+
+        const allObjects = [...this.suns, ...this.planets, ...this.moons];
+        this.selectedObjects = allObjects.filter(obj => {
+            return obj.x >= minX && obj.x <= maxX && obj.y >= minY && obj.y <= maxY;
+        });
+
+        // Set selectedObject to first one for backward compatibility
+        this.selectedObject = this.selectedObjects.length > 0 ? this.selectedObjects[0] : null;
     }
 
     onDoubleClick(e) {
@@ -275,7 +374,12 @@ class Orgaversum {
         const obj = this.getObjectAt(pos.x, pos.y);
 
         if (obj) {
-            this.showEditModal(obj);
+            // If multiple objects selected, show multi-edit modal
+            if (this.selectedObjects.length > 1) {
+                this.showMultiEditModal();
+            } else {
+                this.showEditModal(obj);
+            }
         }
     }
 
@@ -602,6 +706,80 @@ class Orgaversum {
         this.saveData();
     }
 
+    // Multi-Edit Modal
+    showMultiEditModal() {
+        const modal = document.getElementById('multiEditModal');
+        const count = document.getElementById('multiEditCount');
+
+        count.textContent = `${this.selectedObjects.length} Objekte ausgewählt`;
+
+        modal.classList.remove('hidden');
+    }
+
+    hideMultiEditModal() {
+        document.getElementById('multiEditModal').classList.add('hidden');
+    }
+
+    applyMultiColor() {
+        const colorValue = document.getElementById('multiColorPicker').value;
+
+        this.selectedObjects.forEach(obj => {
+            const oldColor = obj.color.main;
+            obj.color = {
+                main: colorValue,
+                glow: this.hexToRgba(colorValue, 0.3)
+            };
+
+            // Mark color as manually set if changed (for moons and planets)
+            if (oldColor !== colorValue && (obj.type === 'moon' || obj.type === 'planet')) {
+                obj.colorManuallySet = true;
+            }
+        });
+
+        this.saveData();
+    }
+
+    applyMultiDeadline() {
+        const deadlineValue = document.getElementById('multiDeadlinePicker').value;
+
+        // Apply deadline only to moons
+        this.selectedObjects.forEach(obj => {
+            if (obj.type === 'moon') {
+                obj.deadline = deadlineValue || null;
+            }
+        });
+
+        this.saveData();
+    }
+
+    deleteMultiSelected() {
+        if (this.selectedObjects.length === 0) return;
+
+        // Collect IDs to delete
+        const idsToDelete = this.selectedObjects.map(obj => obj.id);
+
+        // Create particles at each object's position
+        this.selectedObjects.forEach(obj => {
+            this.createParticles(obj.x, obj.y, 30);
+        });
+
+        // Remove from suns, planets and moons
+        this.suns = this.suns.filter(s => !idsToDelete.includes(s.id));
+        this.planets = this.planets.filter(p => !idsToDelete.includes(p.id));
+        this.moons = this.moons.filter(m => !idsToDelete.includes(m.id));
+
+        // Remove connections
+        this.connections = this.connections.filter(c =>
+            !idsToDelete.includes(c.from) && !idsToDelete.includes(c.to)
+        );
+
+        // Clear selection
+        this.selectedObjects = [];
+
+        this.hideMultiEditModal();
+        this.saveData();
+    }
+
     // Create objects
     addSun(name) {
         const sunColors = [
@@ -914,6 +1092,14 @@ class Orgaversum {
         // Draw particles
         this.drawParticles();
 
+        // Draw selection highlights
+        this.drawSelectionHighlights();
+
+        // Draw box selection
+        if (this.isBoxSelecting && this.boxStart && this.boxEnd) {
+            this.drawSelectionBox();
+        }
+
         // Restore transformation
         this.ctx.restore();
 
@@ -951,6 +1137,61 @@ class Orgaversum {
         // Text
         ctx.fillStyle = '#fff';
         ctx.fillText(text, x, y);
+    }
+
+    drawSelectionHighlights() {
+        const ctx = this.ctx;
+
+        this.selectedObjects.forEach(obj => {
+            ctx.save();
+
+            // Draw highlight ring around selected object
+            ctx.beginPath();
+            ctx.arc(obj.x, obj.y, obj.radius + 8, 0, Math.PI * 2);
+            ctx.strokeStyle = '#6366f1';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([5, 5]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw corner markers
+            const markerSize = 6;
+            const distance = obj.radius + 12;
+            const angles = [0, Math.PI / 2, Math.PI, Math.PI * 1.5];
+
+            angles.forEach(angle => {
+                const x = obj.x + Math.cos(angle) * distance;
+                const y = obj.y + Math.sin(angle) * distance;
+
+                ctx.fillStyle = '#6366f1';
+                ctx.fillRect(x - markerSize / 2, y - markerSize / 2, markerSize, markerSize);
+            });
+
+            ctx.restore();
+        });
+    }
+
+    drawSelectionBox() {
+        const ctx = this.ctx;
+        const minX = Math.min(this.boxStart.x, this.boxEnd.x);
+        const maxX = Math.max(this.boxStart.x, this.boxEnd.x);
+        const minY = Math.min(this.boxStart.y, this.boxEnd.y);
+        const maxY = Math.max(this.boxStart.y, this.boxEnd.y);
+
+        ctx.save();
+
+        // Fill
+        ctx.fillStyle = 'rgba(99, 102, 241, 0.1)';
+        ctx.fillRect(minX, minY, maxX - minX, maxY - minY);
+
+        // Border
+        ctx.strokeStyle = '#6366f1';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+        ctx.setLineDash([]);
+
+        ctx.restore();
     }
 
     drawSun(sun) {
