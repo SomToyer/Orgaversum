@@ -2916,9 +2916,9 @@ class Orgaversum {
                 const currentX = screenStart.x + (screenEnd.x - screenStart.x) * returnProgress;
                 const currentY = screenStart.y + (screenEnd.y - screenStart.y) * returnProgress - Math.sin(returnProgress * Math.PI) * 100;
 
-                // Calculate rotation angle for flight direction
+                // Calculate tangent to the parabolic arc for correct flight direction
                 const dx = screenEnd.x - screenStart.x;
-                const dy = screenEnd.y - screenStart.y;
+                const dy = screenEnd.y - screenStart.y - Math.cos(returnProgress * Math.PI) * Math.PI * 100;
                 const angle = Math.atan2(dy, dx) + Math.PI / 2; // +90° to point right
 
                 // Draw rocket image with rotation
@@ -2961,9 +2961,9 @@ class Orgaversum {
                 // Draw rocket image with rotation pointing in flight direction
                 const img = this.imageCache.get(rocket.image);
                 if (img && img.complete) {
-                    // Calculate angle from start to end for rotation
+                    // Calculate tangent to the parabolic arc for correct flight direction
                     const dx = screenEnd.x - screenStart.x;
-                    const dy = screenEnd.y - screenStart.y;
+                    const dy = screenEnd.y - screenStart.y - Math.cos(progress * Math.PI) * Math.PI * 100;
                     const angle = Math.atan2(dy, dx) + Math.PI / 2; // +90° to point right
 
                     this.ctx.save();
