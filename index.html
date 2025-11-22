@@ -11,6 +11,12 @@
         <div id="toolbar">
             <h1>Orgaversum</h1>
             <div class="toolbar-buttons">
+                <button id="undoBtn" class="btn btn-undo" title="Rückgängig (Strg+Z)" disabled>
+                    <span class="icon">←</span>
+                </button>
+                <button id="redoBtn" class="btn btn-redo" title="Wiederherstellen (Strg+Y)" disabled>
+                    <span class="icon">→</span>
+                </button>
                 <button id="addSun" class="btn btn-sun">
                     <span class="icon">+</span> Sonne
                 </button>
@@ -23,9 +29,6 @@
                 <button id="toggleConnect" class="btn btn-connect">
                     <span class="icon">🔗</span> Verbinden
                 </button>
-                <button id="clearAll" class="btn btn-clear">
-                    <span class="icon">🗑</span> Leeren
-                </button>
             </div>
             <div id="connectMode" class="connect-indicator hidden">
                 Verbindungsmodus aktiv - Klicke zwei Objekte
@@ -35,12 +38,9 @@
         <!-- Raketen Auswahl -->
         <div id="rocketSelector" class="rocket-selector">
             <div class="rocket-title">Raketen</div>
-            <div class="rocket-item" data-color="#ef4444" style="color: #ef4444;">🚀</div>
-            <div class="rocket-item" data-color="#f59e0b" style="color: #f59e0b;">🚀</div>
-            <div class="rocket-item" data-color="#10b981" style="color: #10b981;">🚀</div>
-            <div class="rocket-item" data-color="#06b6d4" style="color: #06b6d4;">🚀</div>
-            <div class="rocket-item" data-color="#6366f1" style="color: #6366f1;">🚀</div>
-            <div class="rocket-item" data-color="#ec4899" style="color: #ec4899;">🚀</div>
+            <div class="rocket-item" data-color="#10b981" data-name="Rick" style="color: #10b981;">🚀 <span class="rocket-name">Rick</span></div>
+            <div class="rocket-item" data-color="#f59e0b" data-name="Chris" style="color: #f59e0b;">🚀 <span class="rocket-name">Chris</span></div>
+            <div class="rocket-item" data-color="#06b6d4" data-name="Flo" style="color: #06b6d4;">🚀 <span class="rocket-name">Flo</span></div>
         </div>
 
         <canvas id="universe"></canvas>
@@ -65,6 +65,10 @@
                 <div class="color-picker">
                     <label>Farbe:</label>
                     <input type="color" id="colorPicker">
+                </div>
+                <div id="deadlineControls" class="deadline-controls hidden">
+                    <label>Deadline:</label>
+                    <input type="date" id="deadlinePicker">
                 </div>
                 <div class="modal-buttons">
                     <button id="editDelete" class="btn btn-delete">Löschen</button>
@@ -130,6 +134,20 @@
                 <div class="modal-buttons">
                     <button id="previewDelete" class="btn btn-delete">Löschen</button>
                     <button id="previewClose" class="btn btn-cancel">Schließen</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rocket Status Modal -->
+        <div id="rocketStatusModal" class="modal hidden">
+            <div class="modal-content">
+                <h2>Raketen-Status</h2>
+                <p>Wählen Sie den Status für diesen Mond:</p>
+                <div class="modal-buttons">
+                    <button id="statusTerraformed" class="btn btn-confirm">Terraforming abgeschlossen</button>
+                    <button id="statusWaiting" class="btn btn-planet">Warte auf Ressourcen</button>
+                    <button id="statusRemove" class="btn btn-delete">Rakete entfernen</button>
+                    <button id="statusCancel" class="btn btn-cancel">Abbrechen</button>
                 </div>
             </div>
         </div>

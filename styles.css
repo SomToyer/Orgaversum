@@ -135,6 +135,28 @@ body {
     box-shadow: 0 6px 20px rgba(239, 68, 68, 0.6);
 }
 
+.btn-undo, .btn-redo {
+    background: linear-gradient(135deg, #6b7280, #4b5563);
+    color: white;
+    box-shadow: 0 4px 15px rgba(107, 114, 128, 0.4);
+    min-width: 40px;
+}
+
+.btn-undo:hover:not(:disabled), .btn-redo:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(107, 114, 128, 0.6);
+}
+
+.btn-undo:disabled, .btn-redo:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.btn-undo:disabled:hover, .btn-redo:disabled:hover {
+    transform: none;
+}
+
 /* Raketen Auswahl */
 .rocket-selector {
     position: absolute;
@@ -163,17 +185,26 @@ body {
 }
 
 .rocket-item {
-    width: 50px;
-    height: 50px;
+    width: 80px;
+    height: 60px;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    font-size: 2rem;
+    gap: 2px;
+    font-size: 1.5rem;
     cursor: pointer;
     border-radius: 12px;
     background: rgba(255, 255, 255, 0.05);
     border: 2px solid transparent;
     transition: all 0.3s ease;
+}
+
+.rocket-name {
+    font-size: 0.7rem;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
 }
 
 .rocket-item:hover {
@@ -206,6 +237,11 @@ body {
 @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.6; }
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
 }
 
 /* Modal */
@@ -286,6 +322,34 @@ body {
 .color-picker input[type="color"]::-webkit-color-swatch {
     border: none;
     border-radius: 6px;
+}
+
+.deadline-controls {
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.deadline-controls label {
+    color: #a78bfa;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.deadline-controls input[type="date"] {
+    padding: 8px 12px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.3);
+    color: #fff;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.deadline-controls input[type="date"]:focus {
+    outline: none;
+    border-color: #6366f1;
 }
 
 .modal-buttons {
@@ -599,7 +663,7 @@ body {
 .retro-action {
     background: none;
     border: none;
-    color: inherit;
+    color: #fff;
     font-size: 10px;
     cursor: pointer;
     padding: 2px 4px;
@@ -641,6 +705,36 @@ body {
 
 .retro-station .retro-item-name { color: #34d399; font-size: 10px; }
 .retro-station .retro-item-icon { color: #34d399; }
+
+/* Deadline styling in retro-list */
+.retro-deadline {
+    margin-left: 6px;
+    font-size: 9px;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-weight: bold;
+}
+
+.deadline-overdue {
+    color: #ef4444;
+    animation: blink 1s infinite;
+}
+
+.deadline-urgent {
+    color: #ef4444;
+}
+
+.deadline-soon {
+    color: #f59e0b;
+}
+
+.deadline-warning {
+    color: #fbbf24;
+}
+
+.deadline-normal {
+    color: #a0a0a0;
+}
 
 /* Scrollbar styling */
 .retro-screen::-webkit-scrollbar {
