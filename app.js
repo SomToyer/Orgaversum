@@ -288,8 +288,14 @@ class Orgaversum {
         this.mousePos = pos;
 
         if (this.dragging) {
-            this.dragging.x = pos.x - this.dragging.offsetX;
-            this.dragging.y = pos.y - this.dragging.offsetY;
+            const newX = pos.x - this.dragging.offsetX;
+            const newY = pos.y - this.dragging.offsetY;
+
+            // Check collision and adjust position if needed
+            const adjustedPos = this.resolveCollision(this.dragging, newX, newY);
+            this.dragging.x = adjustedPos.x;
+            this.dragging.y = adjustedPos.y;
+
             this.saveData();
         } else {
             // Check for add button hover first
@@ -458,6 +464,71 @@ class Orgaversum {
         }
 
         return null;
+    }
+
+    checkCollision(obj, x, y) {
+        // Minimum distance between object edges (buffer)
+        const minBuffer = 20;
+
+        // Get all objects except the one being moved
+        const allObjects = [...this.suns, ...this.planets, ...this.moons];
+
+        for (const other of allObjects) {
+            if (other === obj) continue;
+
+            const dist = Math.hypot(x - other.x, y - other.y);
+            const minDist = obj.radius + other.radius + minBuffer;
+
+            if (dist < minDist) {
+                return { collision: true, other: other, dist: dist, minDist: minDist };
+            }
+        }
+
+        return { collision: false };
+    }
+
+    resolveCollision(obj, x, y) {
+        const collision = this.checkCollision(obj, x, y);
+
+        if (!collision.collision) {
+            return { x: x, y: y };
+        }
+
+        // Push object away from collision
+        const other = collision.other;
+        const angle = Math.atan2(y - other.y, x - other.x);
+        const minDist = obj.radius + other.radius + 20;
+
+        return {
+            x: other.x + Math.cos(angle) * minDist,
+            y: other.y + Math.sin(angle) * minDist
+        };
+    }
+
+    findNonCollidingPosition(obj, preferredX, preferredY) {
+        // Try the preferred position first
+        if (!this.checkCollision(obj, preferredX, preferredY).collision) {
+            return { x: preferredX, y: preferredY };
+        }
+
+        // Try positions in a spiral pattern
+        const step = 30;
+        const maxAttempts = 50;
+
+        for (let attempt = 1; attempt < maxAttempts; attempt++) {
+            const angle = attempt * 0.5; // Spiral angle
+            const distance = attempt * step;
+
+            const x = preferredX + Math.cos(angle) * distance;
+            const y = preferredY + Math.sin(angle) * distance;
+
+            if (!this.checkCollision(obj, x, y).collision) {
+                return { x: x, y: y };
+            }
+        }
+
+        // If all else fails, return preferred position (will be pushed away)
+        return this.resolveCollision(obj, preferredX, preferredY);
     }
 
     getAddButtonPosition(obj) {
@@ -677,43 +748,57 @@ class Orgaversum {
 
         if (!name || !name.trim()) return;
 
-        // Position near parent (rechts unten)
+        // Preferred position near parent (rechts unten)
         const angle = Math.PI / 4; // 45 Grad
         const distance = parent.radius + 150 + Math.random() * 50;
-        const x = parent.x + Math.cos(angle) * distance;
-        const y = parent.y + Math.sin(angle) * distance;
+        const preferredX = parent.x + Math.cos(angle) * distance;
+        const preferredY = parent.y + Math.sin(angle) * distance;
 
         let newObj = null;
 
         if (type === 'planet') {
-            // Create planet
+            // Create planet with temporary position
             const color = this.planetColors[Math.floor(Math.random() * this.planetColors.length)];
+            const radius = 40 + Math.random() * 20;
             newObj = {
                 id: this.nextId++,
                 type: 'planet',
                 name: name.trim(),
-                x: x,
-                y: y,
-                radius: 40 + Math.random() * 20,
+                x: 0,
+                y: 0,
+                radius: radius,
                 color: color,
                 rotation: Math.random() * Math.PI * 2,
                 rotationSpeed: 0.001 + Math.random() * 0.002
             };
+
+            // Find non-colliding position
+            const pos = this.findNonCollidingPosition(newObj, preferredX, preferredY);
+            newObj.x = pos.x;
+            newObj.y = pos.y;
+
             this.planets.push(newObj);
         } else {
-            // Create moon with parent planet's color
+            // Create moon with temporary position
+            const radius = 15 + Math.random() * 10;
             const moon = {
                 id: this.nextId++,
                 type: 'moon',
                 name: name.trim(),
-                x: x,
-                y: y,
-                radius: 15 + Math.random() * 10,
+                x: 0,
+                y: 0,
+                radius: radius,
                 color: parent.color, // Use parent planet's color
                 phase: Math.random() * Math.PI * 2,
                 stations: [],
                 deadline: null
             };
+
+            // Find non-colliding position
+            const pos = this.findNonCollidingPosition(moon, preferredX, preferredY);
+            moon.x = pos.x;
+            moon.y = pos.y;
+
             this.moons.push(moon);
             newObj = moon;
         }
@@ -871,16 +956,27 @@ class Orgaversum {
             { main: '#fb923c', glow: 'rgba(251, 146, 60, 0.4)' },
         ];
         const color = sunColors[Math.floor(Math.random() * sunColors.length)];
+        const radius = 60 + Math.random() * 30;
+
+        // Preferred position
+        const preferredX = 150 + Math.random() * (this.canvas.width - 300);
+        const preferredY = 150 + Math.random() * (this.canvas.height - 300);
+
         const sun = {
             id: this.nextId++,
             type: 'sun',
             name: name,
-            x: 150 + Math.random() * (this.canvas.width - 300),
-            y: 150 + Math.random() * (this.canvas.height - 300),
-            radius: 60 + Math.random() * 30,
+            x: 0,
+            y: 0,
+            radius: radius,
             color: color,
             pulsePhase: Math.random() * Math.PI * 2
         };
+
+        // Find non-colliding position
+        const pos = this.findNonCollidingPosition(sun, preferredX, preferredY);
+        sun.x = pos.x;
+        sun.y = pos.y;
 
         this.suns.push(sun);
         this.createParticles(sun.x, sun.y, 40);
@@ -889,17 +985,28 @@ class Orgaversum {
 
     addPlanet(name) {
         const color = this.planetColors[Math.floor(Math.random() * this.planetColors.length)];
+        const radius = 40 + Math.random() * 20;
+
+        // Preferred position
+        const preferredX = 150 + Math.random() * (this.canvas.width - 300);
+        const preferredY = 150 + Math.random() * (this.canvas.height - 300);
+
         const planet = {
             id: this.nextId++,
             type: 'planet',
             name: name,
-            x: 150 + Math.random() * (this.canvas.width - 300),
-            y: 150 + Math.random() * (this.canvas.height - 300),
-            radius: 40 + Math.random() * 20,
+            x: 0,
+            y: 0,
+            radius: radius,
             color: color,
             rotation: Math.random() * Math.PI * 2,
             rotationSpeed: 0.001 + Math.random() * 0.002
         };
+
+        // Find non-colliding position
+        const pos = this.findNonCollidingPosition(planet, preferredX, preferredY);
+        planet.x = pos.x;
+        planet.y = pos.y;
 
         this.planets.push(planet);
         this.createParticles(planet.x, planet.y, 30);
@@ -908,18 +1015,29 @@ class Orgaversum {
 
     addMoon(name) {
         const color = this.moonColors[Math.floor(Math.random() * this.moonColors.length)];
+        const radius = 15 + Math.random() * 10;
+
+        // Preferred position
+        const preferredX = 150 + Math.random() * (this.canvas.width - 300);
+        const preferredY = 150 + Math.random() * (this.canvas.height - 300);
+
         const moon = {
             id: this.nextId++,
             type: 'moon',
             name: name,
-            x: 150 + Math.random() * (this.canvas.width - 300),
-            y: 150 + Math.random() * (this.canvas.height - 300),
-            radius: 15 + Math.random() * 10,
+            x: 0,
+            y: 0,
+            radius: radius,
             color: color,
             phase: Math.random() * Math.PI * 2,
             stations: [],
             deadline: null  // Deadline für Mond
         };
+
+        // Find non-colliding position
+        const pos = this.findNonCollidingPosition(moon, preferredX, preferredY);
+        moon.x = pos.x;
+        moon.y = pos.y;
 
         this.moons.push(moon);
         this.createParticles(moon.x, moon.y, 20);
