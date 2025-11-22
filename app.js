@@ -55,6 +55,12 @@ class Orgaversum {
         this.draggedFile = null;
         this.dropTarget = null;
 
+        // Undo/Redo state
+        this.history = [];
+        this.currentHistoryIndex = -1;
+        this.maxHistory = 50;
+        this.isRestoringState = false;
+
         // Colors
         this.planetColors = [
             { main: '#6366f1', glow: 'rgba(99, 102, 241, 0.3)' },
@@ -116,6 +122,8 @@ class Orgaversum {
         document.getElementById('addPlanet').addEventListener('click', () => this.showModal('planet'));
         document.getElementById('addMoon').addEventListener('click', () => this.showModal('moon'));
         document.getElementById('toggleConnect').addEventListener('click', () => this.toggleConnectMode());
+        document.getElementById('undoBtn').addEventListener('click', () => this.undo());
+        document.getElementById('redoBtn').addEventListener('click', () => this.redo());
 
         // Modal
         document.getElementById('modalCancel').addEventListener('click', () => this.hideModal());
@@ -368,6 +376,24 @@ class Orgaversum {
     }
 
     onKeyDown(e) {
+        // Check if input is focused
+        const activeElement = document.activeElement;
+        const isInputFocused = activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA');
+
+        // Undo with Ctrl+Z
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !isInputFocused) {
+            e.preventDefault();
+            this.undo();
+            return;
+        }
+
+        // Redo with Ctrl+Y
+        if ((e.ctrlKey || e.metaKey) && e.key === 'y' && !isInputFocused) {
+            e.preventDefault();
+            this.redo();
+            return;
+        }
+
         // Delete selected object when Delete or Backspace is pressed
         if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedObject) {
             // Prevent default backspace behavior (going back in browser)
@@ -2765,8 +2791,92 @@ class Orgaversum {
         return null;
     }
 
+    // Undo/Redo functionality
+    getCurrentState() {
+        return {
+            suns: JSON.parse(JSON.stringify(this.suns)),
+            planets: JSON.parse(JSON.stringify(this.planets)),
+            moons: JSON.parse(JSON.stringify(this.moons)),
+            connections: JSON.parse(JSON.stringify(this.connections)),
+            nextId: this.nextId
+        };
+    }
+
+    pushHistory() {
+        if (this.isRestoringState) return;
+
+        // Remove any redo history when making a new change
+        if (this.currentHistoryIndex < this.history.length - 1) {
+            this.history = this.history.slice(0, this.currentHistoryIndex + 1);
+        }
+
+        // Add current state to history
+        this.history.push(this.getCurrentState());
+
+        // Limit history size
+        if (this.history.length > this.maxHistory) {
+            this.history.shift();
+        } else {
+            this.currentHistoryIndex++;
+        }
+
+        this.updateUndoRedoButtons();
+    }
+
+    restoreState(state) {
+        this.isRestoringState = true;
+
+        this.suns = JSON.parse(JSON.stringify(state.suns));
+        this.planets = JSON.parse(JSON.stringify(state.planets));
+        this.moons = JSON.parse(JSON.stringify(state.moons));
+        this.connections = JSON.parse(JSON.stringify(state.connections));
+        this.nextId = state.nextId;
+
+        // Save to localStorage without creating history
+        const data = {
+            suns: this.suns,
+            planets: this.planets,
+            moons: this.moons,
+            connections: this.connections,
+            nextId: this.nextId
+        };
+        localStorage.setItem('orgaversum', JSON.stringify(data));
+        this.updateRetroList();
+
+        this.isRestoringState = false;
+    }
+
+    undo() {
+        if (this.currentHistoryIndex > 0) {
+            this.currentHistoryIndex--;
+            this.restoreState(this.history[this.currentHistoryIndex]);
+            this.updateUndoRedoButtons();
+        }
+    }
+
+    redo() {
+        if (this.currentHistoryIndex < this.history.length - 1) {
+            this.currentHistoryIndex++;
+            this.restoreState(this.history[this.currentHistoryIndex]);
+            this.updateUndoRedoButtons();
+        }
+    }
+
+    updateUndoRedoButtons() {
+        const undoBtn = document.getElementById('undoBtn');
+        const redoBtn = document.getElementById('redoBtn');
+
+        undoBtn.disabled = this.currentHistoryIndex <= 0;
+        redoBtn.disabled = this.currentHistoryIndex >= this.history.length - 1;
+    }
+
     // Data persistence
     saveData() {
+        // Push to history before saving
+        if (!this.isRestoringState) {
+            this.pushHistory();
+        }
+
         const data = {
             suns: this.suns,
             planets: this.planets,
@@ -2793,6 +2903,11 @@ class Orgaversum {
             }
         }
         this.updateRetroList();
+
+        // Initialize history with current state
+        this.history = [this.getCurrentState()];
+        this.currentHistoryIndex = 0;
+        this.updateUndoRedoButtons();
     }
 }
 

@@ -135,6 +135,28 @@ body {
     box-shadow: 0 6px 20px rgba(239, 68, 68, 0.6);
 }
 
+.btn-undo, .btn-redo {
+    background: linear-gradient(135deg, #6b7280, #4b5563);
+    color: white;
+    box-shadow: 0 4px 15px rgba(107, 114, 128, 0.4);
+    min-width: 40px;
+}
+
+.btn-undo:hover:not(:disabled), .btn-redo:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(107, 114, 128, 0.6);
+}
+
+.btn-undo:disabled, .btn-redo:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.btn-undo:disabled:hover, .btn-redo:disabled:hover {
+    transform: none;
+}
+
 /* Raketen Auswahl */
 .rocket-selector {
     position: absolute;
