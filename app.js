@@ -19,6 +19,7 @@ class Orgaversum {
         this.dragging = null;
         this.hovering = null;
         this.hoveringStation = null;
+        this.selectedObject = null;
         this.connectMode = false;
         this.connectFirst = null;
         this.mousePos = { x: 0, y: 0 };
@@ -106,6 +107,9 @@ class Orgaversum {
 
         // Paste event for screenshots
         document.addEventListener('paste', (e) => this.onPaste(e));
+
+        // Keyboard events
+        document.addEventListener('keydown', (e) => this.onKeyDown(e));
 
         // Buttons
         document.getElementById('addSun').addEventListener('click', () => this.showModal('sun'));
@@ -264,10 +268,12 @@ class Orgaversum {
             this.dragging = obj;
             this.dragging.offsetX = pos.x - obj.x;
             this.dragging.offsetY = pos.y - obj.y;
+            this.selectedObject = obj; // Set selected object for keyboard deletion
         } else {
             // Pan when clicking on empty space
             this.isPanning = true;
             this.lastPanPos = { x: screenX, y: screenY };
+            this.selectedObject = null; // Deselect when clicking empty space
         }
     }
 
@@ -358,6 +364,45 @@ class Orgaversum {
                 reader.readAsDataURL(file);
                 break;
             }
+        }
+    }
+
+    onKeyDown(e) {
+        // Delete selected object when Delete or Backspace is pressed
+        if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedObject) {
+            // Prevent default backspace behavior (going back in browser)
+            e.preventDefault();
+
+            // Don't delete if a modal is open
+            const modals = ['modal', 'editModal', 'stationModal', 'previewModal', 'rocketStatusModal'];
+            const anyModalOpen = modals.some(id => !document.getElementById(id).classList.contains('hidden'));
+            if (anyModalOpen) return;
+
+            // Don't delete if an input is focused
+            const activeElement = document.activeElement;
+            if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+                return;
+            }
+
+            // Delete the selected object
+            const id = this.selectedObject.id;
+
+            // Remove from arrays
+            this.suns = this.suns.filter(s => s.id !== id);
+            this.planets = this.planets.filter(p => p.id !== id);
+            this.moons = this.moons.filter(m => m.id !== id);
+
+            // Remove connections
+            this.connections = this.connections.filter(c => c.from !== id && c.to !== id);
+
+            // Create particles for visual feedback
+            this.createParticles(this.selectedObject.x, this.selectedObject.y, 30);
+
+            // Clear selection
+            this.selectedObject = null;
+            this.dragging = null;
+
+            this.saveData();
         }
     }
 

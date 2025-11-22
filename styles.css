@@ -641,7 +641,7 @@ body {
 .retro-action {
     background: none;
     border: none;
-    color: inherit;
+    color: #fff;
     font-size: 10px;
     cursor: pointer;
     padding: 2px 4px;
