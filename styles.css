@@ -639,6 +639,27 @@ body {
     background: rgba(0, 255, 0, 0.1);
 }
 
+.retro-toggle-icon {
+    color: #0f0;
+    font-size: 10px;
+    cursor: pointer;
+    user-select: none;
+    width: 12px;
+    display: inline-block;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.retro-toggle-icon:hover {
+    color: #fff;
+}
+
+.retro-toggle-placeholder {
+    width: 12px;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
 .retro-item-icon {
     font-size: 10px;
 }
@@ -691,6 +712,10 @@ body {
     margin-left: 16px;
     border-left: 1px solid rgba(0, 255, 0, 0.2);
     padding-left: 8px;
+}
+
+.retro-children.collapsed {
+    display: none;
 }
 
 /* Color coding for hierarchy */

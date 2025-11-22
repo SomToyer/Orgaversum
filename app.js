@@ -67,6 +67,9 @@ class Orgaversum {
         this.maxHistory = 50;
         this.isRestoringState = false;
 
+        // Collapse/Expand state for list view
+        this.collapsedItems = new Set();
+
         // Colors
         this.planetColors = [
             { main: '#6366f1', glow: 'rgba(99, 102, 241, 0.3)' },
@@ -2422,19 +2425,25 @@ class Orgaversum {
         // Build hierarchical structure based on connections
         // First, render suns with their connected planets
         this.suns.forEach(sun => {
-            html += this.renderRetroItem(sun, 'sun', '☀');
-
             // Find planets connected to this sun
             const connectedPlanets = this.getChildrenOf(sun.id, 'planet');
-            if (connectedPlanets.length > 0) {
-                html += '<div class="retro-children">';
-                connectedPlanets.forEach(planet => {
-                    html += this.renderRetroItem(planet, 'planet', '●');
+            const hasChildren = connectedPlanets.length > 0;
+            const isCollapsed = this.collapsedItems.has(sun.id);
 
+            html += this.renderRetroItem(sun, 'sun', '☀', hasChildren);
+
+            if (hasChildren) {
+                html += `<div class="retro-children ${isCollapsed ? 'collapsed' : ''}" data-parent="${sun.id}">`;
+                connectedPlanets.forEach(planet => {
                     // Find moons connected to this planet
                     const connectedMoons = this.getChildrenOf(planet.id, 'moon');
-                    if (connectedMoons.length > 0) {
-                        html += '<div class="retro-children">';
+                    const planetHasChildren = connectedMoons.length > 0;
+                    const isPlanetCollapsed = this.collapsedItems.has(planet.id);
+
+                    html += this.renderRetroItem(planet, 'planet', '●', planetHasChildren);
+
+                    if (planetHasChildren) {
+                        html += `<div class="retro-children ${isPlanetCollapsed ? 'collapsed' : ''}" data-parent="${planet.id}">`;
                         connectedMoons.forEach(moon => {
                             html += this.renderRetroMoon(moon);
                         });
@@ -2450,12 +2459,15 @@ class Orgaversum {
             !this.connections.some(c => c.to === planet.id && this.getObjectById(c.from)?.type === 'sun')
         );
         orphanedPlanets.forEach(planet => {
-            html += this.renderRetroItem(planet, 'planet', '●');
-
             // Find moons connected to this orphaned planet
             const connectedMoons = this.getChildrenOf(planet.id, 'moon');
-            if (connectedMoons.length > 0) {
-                html += '<div class="retro-children">';
+            const hasChildren = connectedMoons.length > 0;
+            const isCollapsed = this.collapsedItems.has(planet.id);
+
+            html += this.renderRetroItem(planet, 'planet', '●', hasChildren);
+
+            if (hasChildren) {
+                html += `<div class="retro-children ${isCollapsed ? 'collapsed' : ''}" data-parent="${planet.id}">`;
                 connectedMoons.forEach(moon => {
                     html += this.renderRetroMoon(moon);
                 });
@@ -2532,13 +2544,16 @@ class Orgaversum {
         return moonIds.map(id => this.moons.find(m => m.id === id));
     }
 
-    renderRetroItem(obj, type, icon) {
+    renderRetroItem(obj, type, icon, hasChildren = false) {
         // Determine what child can be added (sun -> planet, planet -> moon)
         const canAddChild = type === 'sun' || type === 'planet';
+        const isCollapsed = this.collapsedItems.has(obj.id);
+        const toggleIcon = hasChildren ? (isCollapsed ? '►' : '▼') : '';
 
         return `
             <div class="retro-item retro-${type}" data-id="${obj.id}" data-type="${type}">
                 <div class="retro-item-header">
+                    ${hasChildren ? `<span class="retro-toggle-icon" data-id="${obj.id}">${toggleIcon}</span>` : '<span class="retro-toggle-placeholder"></span>'}
                     <span class="retro-item-icon">${icon}</span>
                     <span class="retro-item-name">${obj.name}</span>
                     <div class="retro-item-actions">
@@ -2601,6 +2616,15 @@ class Orgaversum {
     attachRetroListeners() {
         const container = document.getElementById('retroList');
         if (!container) return;
+
+        // Toggle collapse/expand buttons
+        container.querySelectorAll('.retro-toggle-icon').forEach(toggle => {
+            toggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = parseInt(toggle.dataset.id);
+                this.toggleCollapseItem(id);
+            });
+        });
 
         // Add child buttons
         container.querySelectorAll('.retro-add-child').forEach(btn => {
@@ -2697,6 +2721,15 @@ class Orgaversum {
 
         // Highlight effect
         this.createParticles(obj.x, obj.y, 20);
+    }
+
+    toggleCollapseItem(id) {
+        if (this.collapsedItems.has(id)) {
+            this.collapsedItems.delete(id);
+        } else {
+            this.collapsedItems.add(id);
+        }
+        this.updateRetroList();
     }
 
     addChildToObject(parentId, parentType) {
