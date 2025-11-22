@@ -102,9 +102,9 @@ class Orgaversum {
     loadRocketImages() {
         // Preload rocket images
         const rocketImages = {
-            'images/rocket-red.svg': new Image(),
-            'images/rocket-blue.svg': new Image(),
-            'images/rocket-green.svg': new Image()
+            'images/rocket-red.png': new Image(),
+            'images/rocket-blue.png': new Image(),
+            'images/rocket-green.png': new Image()
         };
 
         Object.keys(rocketImages).forEach(path => {
