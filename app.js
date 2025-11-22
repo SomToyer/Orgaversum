@@ -604,8 +604,8 @@ class Orgaversum {
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
 
-        // Zoom factor
-        const zoomIntensity = 0.1;
+        // Zoom factor - reduced sensitivity for touchpad
+        const zoomIntensity = 0.05;
         const delta = e.deltaY > 0 ? -zoomIntensity : zoomIntensity;
         const newScale = Math.max(0.05, Math.min(5, this.scale * (1 + delta)));
 
