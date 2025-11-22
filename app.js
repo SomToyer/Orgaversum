@@ -37,6 +37,9 @@ class Orgaversum {
         this.previewingStation = null;
         this.previewingMoon = null;
 
+        // Add button state
+        this.hoveringAddButton = null;
+
         // Animation
         this.time = 0;
         this.particles = [];
@@ -220,6 +223,13 @@ class Orgaversum {
             }
         }
 
+        // Check if clicking on add button
+        const addButtonClick = this.getAddButtonAt(pos.x, pos.y);
+        if (addButtonClick) {
+            this.handleAddButtonClick(addButtonClick.parent, addButtonClick.type);
+            return;
+        }
+
         // Check if clicking on object with orbiting rocket
         let obj = this.getObjectAt(pos.x, pos.y);
         if (obj) {
@@ -282,12 +292,16 @@ class Orgaversum {
             this.dragging.y = pos.y - this.dragging.offsetY;
             this.saveData();
         } else {
+            // Check for add button hover first
+            const addButtonHover = this.getAddButtonAt(pos.x, pos.y);
+            this.hoveringAddButton = addButtonHover;
+
             // Check for station hover
             const stationHover = this.getStationAt(pos.x, pos.y);
             this.hoveringStation = stationHover;
 
             this.hovering = this.getObjectAt(pos.x, pos.y);
-            this.canvas.style.cursor = (this.hovering || this.hoveringStation) ? 'pointer' : 'grab';
+            this.canvas.style.cursor = (this.hovering || this.hoveringStation || this.hoveringAddButton) ? 'pointer' : 'grab';
         }
     }
 
@@ -446,6 +460,95 @@ class Orgaversum {
         return null;
     }
 
+    getAddButtonPosition(obj) {
+        // Position: oben rechts vom Objekt
+        const offset = obj.radius + 15;
+        const angle = -Math.PI / 4; // 45 Grad oben rechts
+        return {
+            x: obj.x + Math.cos(angle) * offset,
+            y: obj.y + Math.sin(angle) * offset
+        };
+    }
+
+    getAddButtonAt(x, y) {
+        if (this.galaxyView) return null;
+
+        // Check add buttons for planets (erscheinen bei Sonnen)
+        for (const sun of this.suns) {
+            const buttonPos = this.getAddButtonPosition(sun);
+            const dist = Math.hypot(x - buttonPos.x, y - buttonPos.y);
+            if (dist <= 12) {
+                return { parent: sun, type: 'planet' };
+            }
+        }
+
+        // Check add buttons for moons (erscheinen bei Planeten)
+        for (const planet of this.planets) {
+            const buttonPos = this.getAddButtonPosition(planet);
+            const dist = Math.hypot(x - buttonPos.x, y - buttonPos.y);
+            if (dist <= 10) {
+                return { parent: planet, type: 'moon' };
+            }
+        }
+
+        return null;
+    }
+
+    drawAddButton(obj, type) {
+        if (this.galaxyView) return;
+
+        const ctx = this.ctx;
+        const buttonPos = this.getAddButtonPosition(obj);
+        const radius = type === 'planet' ? 12 : 10;
+        const isHovered = this.hoveringAddButton &&
+                         this.hoveringAddButton.parent === obj &&
+                         this.hoveringAddButton.type === type;
+
+        ctx.save();
+
+        // Weißer Kreis mit Schatten
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+        ctx.shadowBlur = 8;
+        ctx.shadowOffsetX = 2;
+        ctx.shadowOffsetY = 2;
+
+        ctx.beginPath();
+        ctx.arc(buttonPos.x, buttonPos.y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = isHovered ? '#ffffff' : 'rgba(255, 255, 255, 0.9)';
+        ctx.fill();
+
+        if (isHovered) {
+            ctx.strokeStyle = '#6366f1';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // Reset shadow
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+
+        // Plus-Symbol (+)
+        const lineLength = radius * 0.6;
+        ctx.strokeStyle = isHovered ? '#6366f1' : '#333';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+
+        // Horizontale Linie
+        ctx.beginPath();
+        ctx.moveTo(buttonPos.x - lineLength, buttonPos.y);
+        ctx.lineTo(buttonPos.x + lineLength, buttonPos.y);
+        ctx.stroke();
+
+        // Vertikale Linie
+        ctx.beginPath();
+        ctx.moveTo(buttonPos.x, buttonPos.y - lineLength);
+        ctx.lineTo(buttonPos.x, buttonPos.y + lineLength);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
     getStationAt(x, y) {
         for (const moon of this.moons) {
             if (!moon.stations) continue;
@@ -564,6 +667,68 @@ class Orgaversum {
             this.updatePlanetStatuses();
             this.saveData();
         }
+    }
+
+    handleAddButtonClick(parent, type) {
+        // Prompt for name
+        const typeName = type === 'planet' ? 'Planet' : 'Mond';
+        const defaultName = `${typeName} ${this.nextId}`;
+        const name = prompt(`Name für neuen ${typeName}:`, defaultName);
+
+        if (!name || !name.trim()) return;
+
+        // Position near parent (rechts unten)
+        const angle = Math.PI / 4; // 45 Grad
+        const distance = parent.radius + 150 + Math.random() * 50;
+        const x = parent.x + Math.cos(angle) * distance;
+        const y = parent.y + Math.sin(angle) * distance;
+
+        let newObj = null;
+
+        if (type === 'planet') {
+            // Create planet
+            const color = this.planetColors[Math.floor(Math.random() * this.planetColors.length)];
+            newObj = {
+                id: this.nextId++,
+                type: 'planet',
+                name: name.trim(),
+                x: x,
+                y: y,
+                radius: 40 + Math.random() * 20,
+                color: color,
+                rotation: Math.random() * Math.PI * 2,
+                rotationSpeed: 0.001 + Math.random() * 0.002
+            };
+            this.planets.push(newObj);
+        } else {
+            // Create moon with parent planet's color
+            const moon = {
+                id: this.nextId++,
+                type: 'moon',
+                name: name.trim(),
+                x: x,
+                y: y,
+                radius: 15 + Math.random() * 10,
+                color: parent.color, // Use parent planet's color
+                phase: Math.random() * Math.PI * 2,
+                stations: [],
+                deadline: null
+            };
+            this.moons.push(moon);
+            newObj = moon;
+        }
+
+        // Create connection to parent
+        this.connections.push({
+            from: parent.id,
+            to: newObj.id
+        });
+
+        // Particle effects
+        this.createParticles(newObj.x, newObj.y, 30);
+        this.createParticles(parent.x, parent.y, 15);
+
+        this.saveData();
     }
 
     // Modal
@@ -1244,6 +1409,9 @@ class Orgaversum {
 
         // Name
         this.drawLabel(sun);
+
+        // Add button (Plus-Symbol zum Hinzufügen von Planeten)
+        this.drawAddButton(sun, 'planet');
     }
 
     drawConnections() {
@@ -1368,6 +1536,9 @@ class Orgaversum {
 
         // Name
         this.drawLabel(planet);
+
+        // Add button (Plus-Symbol zum Hinzufügen von Monden)
+        this.drawAddButton(planet, 'moon');
     }
 
     drawMoon(moon) {
