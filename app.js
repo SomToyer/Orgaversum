@@ -2919,7 +2919,7 @@ class Orgaversum {
                 // Calculate tangent to the parabolic arc for correct flight direction
                 const dx = screenEnd.x - screenStart.x;
                 const dy = screenEnd.y - screenStart.y - Math.cos(returnProgress * Math.PI) * Math.PI * 100;
-                const angle = Math.atan2(dy, dx); // Angle in flight direction
+                const angle = Math.atan2(dy, dx) + Math.PI; // +180° correction
 
                 // Draw rocket image with rotation
                 const img = this.imageCache.get(rocket.image);
@@ -2964,7 +2964,7 @@ class Orgaversum {
                     // Calculate tangent to the parabolic arc for correct flight direction
                     const dx = screenEnd.x - screenStart.x;
                     const dy = screenEnd.y - screenStart.y - Math.cos(progress * Math.PI) * Math.PI * 100;
-                    const angle = Math.atan2(dy, dx); // Angle in flight direction
+                    const angle = Math.atan2(dy, dx) + Math.PI; // +180° correction
 
                     this.ctx.save();
                     this.ctx.translate(currentX, currentY);
@@ -3013,7 +3013,7 @@ class Orgaversum {
                 // Draw rocket with rotation tangent to orbit
                 this.ctx.save();
                 this.ctx.translate(rocketX, rocketY);
-                this.ctx.rotate(orbitAngle); // Tangent to circular orbit
+                this.ctx.rotate(orbitAngle + Math.PI); // +180° correction
                 this.ctx.scale(1 / this.scale, 1 / this.scale);
 
                 // Draw rocket image
