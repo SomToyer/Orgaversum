@@ -1445,62 +1445,81 @@ class Orgaversum {
             ctx.stroke();
         }
 
-        // Deadline visual effects
-        if (moon.deadline && !moon.rocketStatus) {
+        // Deadline visual effects (only if no rocket and not in galaxy view)
+        if (moon.deadline && !moon.rocketStatus && !this.galaxyView) {
             const daysUntil = this.getDaysUntilDeadline(moon.deadline);
 
-            if (daysUntil < 0) {
-                // Überschritten - Roter Blitz-Effekt
-                const blinkIntensity = Math.sin(this.time * 10) * 0.5 + 0.5;
-                for (let i = 0; i < 3; i++) {
+            if (daysUntil !== null) {
+                if (daysUntil < 0) {
+                    // Überschritten - Roter Blitz-Effekt (verstärkt)
+                    const blinkIntensity = Math.sin(this.time * 10) * 0.5 + 0.5;
+
+                    // Mehrere pulsierende Ringe
+                    for (let i = 0; i < 4; i++) {
+                        ctx.beginPath();
+                        ctx.arc(moon.x, moon.y, moon.radius + 15 + i * 5, 0, Math.PI * 2);
+                        ctx.strokeStyle = `rgba(239, 68, 68, ${(1 - i * 0.2) * blinkIntensity * 0.8})`;
+                        ctx.lineWidth = 4;
+                        ctx.stroke();
+                    }
+
+                    // Blitz-Symbole
+                    const lightningCount = 8;
+                    for (let i = 0; i < lightningCount; i++) {
+                        const angle = (Math.PI * 2 / lightningCount) * i + this.time * 2;
+                        const startRadius = moon.radius + 12;
+                        const endRadius = moon.radius + 28;
+                        ctx.beginPath();
+                        ctx.moveTo(
+                            moon.x + Math.cos(angle) * startRadius,
+                            moon.y + Math.sin(angle) * startRadius
+                        );
+                        ctx.lineTo(
+                            moon.x + Math.cos(angle) * endRadius,
+                            moon.y + Math.sin(angle) * endRadius
+                        );
+                        ctx.strokeStyle = `rgba(239, 68, 68, ${blinkIntensity * 0.9})`;
+                        ctx.lineWidth = 3;
+                        ctx.stroke();
+                    }
+                } else if (daysUntil < 1) {
+                    // <24h - Rot blinkend (verstärkt)
+                    const blinkIntensity = Math.sin(this.time * 8) * 0.5 + 0.5;
+
+                    for (let i = 0; i < 2; i++) {
+                        ctx.beginPath();
+                        ctx.arc(moon.x, moon.y, moon.radius + 12 + i * 6, 0, Math.PI * 2);
+                        ctx.strokeStyle = `rgba(239, 68, 68, ${blinkIntensity * (1 - i * 0.3)})`;
+                        ctx.lineWidth = 5;
+                        ctx.stroke();
+                    }
+                } else if (daysUntil < 3) {
+                    // 1-3 Tage - Orange pulsierend (verstärkt)
+                    const pulseIntensity = Math.sin(this.time * 3) * 0.4 + 0.6;
+                    const pulseRadius = moon.radius + 10 + pulseIntensity * 6;
+
                     ctx.beginPath();
-                    ctx.arc(moon.x, moon.y, moon.radius + 12 + i * 4, 0, Math.PI * 2);
-                    ctx.strokeStyle = `rgba(239, 68, 68, ${(1 - i * 0.3) * blinkIntensity})`;
+                    ctx.arc(moon.x, moon.y, pulseRadius, 0, Math.PI * 2);
+                    ctx.strokeStyle = `rgba(245, 158, 11, ${pulseIntensity * 0.9})`;
+                    ctx.lineWidth = 5;
+                    ctx.stroke();
+
+                    // Zusätzlicher äußerer Ring
+                    ctx.beginPath();
+                    ctx.arc(moon.x, moon.y, pulseRadius + 6, 0, Math.PI * 2);
+                    ctx.strokeStyle = `rgba(245, 158, 11, ${pulseIntensity * 0.5})`;
                     ctx.lineWidth = 3;
                     ctx.stroke();
+                } else if (daysUntil < 7) {
+                    // 3-7 Tage - Gelber Schimmer (verstärkt)
+                    for (let i = 0; i < 2; i++) {
+                        ctx.beginPath();
+                        ctx.arc(moon.x, moon.y, moon.radius + 10 + i * 5, 0, Math.PI * 2);
+                        ctx.strokeStyle = `rgba(251, 191, 36, ${0.7 - i * 0.3})`;
+                        ctx.lineWidth = 4;
+                        ctx.stroke();
+                    }
                 }
-                // Blitz-Symbole
-                const lightningCount = 6;
-                for (let i = 0; i < lightningCount; i++) {
-                    const angle = (Math.PI * 2 / lightningCount) * i + this.time * 2;
-                    const startRadius = moon.radius + 10;
-                    const endRadius = moon.radius + 20;
-                    ctx.beginPath();
-                    ctx.moveTo(
-                        moon.x + Math.cos(angle) * startRadius,
-                        moon.y + Math.sin(angle) * startRadius
-                    );
-                    ctx.lineTo(
-                        moon.x + Math.cos(angle) * endRadius,
-                        moon.y + Math.sin(angle) * endRadius
-                    );
-                    ctx.strokeStyle = `rgba(239, 68, 68, ${blinkIntensity})`;
-                    ctx.lineWidth = 2;
-                    ctx.stroke();
-                }
-            } else if (daysUntil < 1) {
-                // <24h - Rot blinkend
-                const blinkIntensity = Math.sin(this.time * 8) * 0.5 + 0.5;
-                ctx.beginPath();
-                ctx.arc(moon.x, moon.y, moon.radius + 10, 0, Math.PI * 2);
-                ctx.strokeStyle = `rgba(239, 68, 68, ${blinkIntensity})`;
-                ctx.lineWidth = 4;
-                ctx.stroke();
-            } else if (daysUntil < 3) {
-                // 1-3 Tage - Orange pulsierend
-                const pulseIntensity = Math.sin(this.time * 3) * 0.3 + 0.7;
-                ctx.beginPath();
-                ctx.arc(moon.x, moon.y, moon.radius + 8 + pulseIntensity * 3, 0, Math.PI * 2);
-                ctx.strokeStyle = `rgba(245, 158, 11, ${pulseIntensity})`;
-                ctx.lineWidth = 3;
-                ctx.stroke();
-            } else if (daysUntil < 7) {
-                // 3-7 Tage - Gelber Schimmer
-                ctx.beginPath();
-                ctx.arc(moon.x, moon.y, moon.radius + 8, 0, Math.PI * 2);
-                ctx.strokeStyle = 'rgba(251, 191, 36, 0.6)';
-                ctx.lineWidth = 3;
-                ctx.stroke();
             }
         }
 
