@@ -217,6 +217,11 @@ body {
     50% { opacity: 0.6; }
 }
 
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
 /* Modal */
 .modal {
     position: fixed;
@@ -295,6 +300,34 @@ body {
 .color-picker input[type="color"]::-webkit-color-swatch {
     border: none;
     border-radius: 6px;
+}
+
+.deadline-controls {
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.deadline-controls label {
+    color: #a78bfa;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.deadline-controls input[type="date"] {
+    padding: 8px 12px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.3);
+    color: #fff;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.deadline-controls input[type="date"]:focus {
+    outline: none;
+    border-color: #6366f1;
 }
 
 .modal-buttons {
@@ -650,6 +683,36 @@ body {
 
 .retro-station .retro-item-name { color: #34d399; font-size: 10px; }
 .retro-station .retro-item-icon { color: #34d399; }
+
+/* Deadline styling in retro-list */
+.retro-deadline {
+    margin-left: 6px;
+    font-size: 9px;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-weight: bold;
+}
+
+.deadline-overdue {
+    color: #ef4444;
+    animation: blink 1s infinite;
+}
+
+.deadline-urgent {
+    color: #ef4444;
+}
+
+.deadline-soon {
+    color: #f59e0b;
+}
+
+.deadline-warning {
+    color: #fbbf24;
+}
+
+.deadline-normal {
+    color: #a0a0a0;
+}
 
 /* Scrollbar styling */
 .retro-screen::-webkit-scrollbar {

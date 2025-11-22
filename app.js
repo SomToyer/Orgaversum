@@ -609,6 +609,8 @@ class Orgaversum {
         const input = document.getElementById('editNameInput');
         const colorPicker = document.getElementById('colorPicker');
         const stationControls = document.getElementById('stationControls');
+        const deadlineControls = document.getElementById('deadlineControls');
+        const deadlinePicker = document.getElementById('deadlinePicker');
 
         input.value = obj.name;
         colorPicker.value = obj.color.main;
@@ -617,11 +619,20 @@ class Orgaversum {
         input.focus();
         input.select();
 
-        // Show station controls only for moons
+        // Show station controls and deadline picker only for moons
         if (obj.type === 'moon') {
             stationControls.classList.remove('hidden');
+            deadlineControls.classList.remove('hidden');
+
+            // Set deadline value if it exists
+            if (obj.deadline) {
+                deadlinePicker.value = obj.deadline;
+            } else {
+                deadlinePicker.value = '';
+            }
         } else {
             stationControls.classList.add('hidden');
+            deadlineControls.classList.add('hidden');
         }
     }
 
@@ -650,6 +661,12 @@ class Orgaversum {
         // Mark color as manually set if changed (for moons and planets)
         if (oldColor !== colorValue && (this.editingObj.type === 'moon' || this.editingObj.type === 'planet')) {
             this.editingObj.colorManuallySet = true;
+        }
+
+        // Update deadline for moons
+        if (this.editingObj.type === 'moon') {
+            const deadlineValue = document.getElementById('deadlinePicker').value;
+            this.editingObj.deadline = deadlineValue || null;
         }
 
         this.saveData();
@@ -735,7 +752,8 @@ class Orgaversum {
             radius: 15 + Math.random() * 10,
             color: color,
             phase: Math.random() * Math.PI * 2,
-            stations: []
+            stations: [],
+            deadline: null  // Deadline für Mond
         };
 
         this.moons.push(moon);
@@ -1427,6 +1445,65 @@ class Orgaversum {
             ctx.stroke();
         }
 
+        // Deadline visual effects
+        if (moon.deadline && !moon.rocketStatus) {
+            const daysUntil = this.getDaysUntilDeadline(moon.deadline);
+
+            if (daysUntil < 0) {
+                // Überschritten - Roter Blitz-Effekt
+                const blinkIntensity = Math.sin(this.time * 10) * 0.5 + 0.5;
+                for (let i = 0; i < 3; i++) {
+                    ctx.beginPath();
+                    ctx.arc(moon.x, moon.y, moon.radius + 12 + i * 4, 0, Math.PI * 2);
+                    ctx.strokeStyle = `rgba(239, 68, 68, ${(1 - i * 0.3) * blinkIntensity})`;
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                }
+                // Blitz-Symbole
+                const lightningCount = 6;
+                for (let i = 0; i < lightningCount; i++) {
+                    const angle = (Math.PI * 2 / lightningCount) * i + this.time * 2;
+                    const startRadius = moon.radius + 10;
+                    const endRadius = moon.radius + 20;
+                    ctx.beginPath();
+                    ctx.moveTo(
+                        moon.x + Math.cos(angle) * startRadius,
+                        moon.y + Math.sin(angle) * startRadius
+                    );
+                    ctx.lineTo(
+                        moon.x + Math.cos(angle) * endRadius,
+                        moon.y + Math.sin(angle) * endRadius
+                    );
+                    ctx.strokeStyle = `rgba(239, 68, 68, ${blinkIntensity})`;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            } else if (daysUntil < 1) {
+                // <24h - Rot blinkend
+                const blinkIntensity = Math.sin(this.time * 8) * 0.5 + 0.5;
+                ctx.beginPath();
+                ctx.arc(moon.x, moon.y, moon.radius + 10, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(239, 68, 68, ${blinkIntensity})`;
+                ctx.lineWidth = 4;
+                ctx.stroke();
+            } else if (daysUntil < 3) {
+                // 1-3 Tage - Orange pulsierend
+                const pulseIntensity = Math.sin(this.time * 3) * 0.3 + 0.7;
+                ctx.beginPath();
+                ctx.arc(moon.x, moon.y, moon.radius + 8 + pulseIntensity * 3, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(245, 158, 11, ${pulseIntensity})`;
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            } else if (daysUntil < 7) {
+                // 3-7 Tage - Gelber Schimmer
+                ctx.beginPath();
+                ctx.arc(moon.x, moon.y, moon.radius + 8, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(251, 191, 36, 0.6)';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            }
+        }
+
         // Highlight if hovered or connecting
         if (isHovered || isConnecting) {
             ctx.beginPath();
@@ -1578,7 +1655,7 @@ class Orgaversum {
         ctx.textBaseline = 'middle';
 
         // Draw name in the CENTER/MIDDLE of the object
-        const y = obj.y;
+        let y = obj.y;
 
         // Text with black shadow for better readability
         ctx.shadowColor = '#000000';
@@ -1588,10 +1665,59 @@ class Orgaversum {
         ctx.fillStyle = '#ffffff';
         ctx.fillText(obj.name, obj.x, y);
 
+        // For moons with deadline, draw the date below the name
+        if (obj.type === 'moon' && obj.deadline && !this.galaxyView) {
+            const dateFont = 12;
+            ctx.font = `${dateFont}px 'Segoe UI', sans-serif`;
+            const formattedDate = this.formatDeadlineShort(obj.deadline);
+            const dateY = y + fontSize / 2 + dateFont + 4;
+            ctx.fillStyle = this.getDeadlineColor(obj.deadline);
+            ctx.fillText(formattedDate, obj.x, dateY);
+        }
+
         // Reset shadow
         ctx.shadowBlur = 0;
         ctx.shadowOffsetX = 0;
         ctx.shadowOffsetY = 0;
+    }
+
+    formatDeadlineShort(deadline) {
+        if (!deadline) return '';
+        const date = new Date(deadline);
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        return `${day}.${month}.`;
+    }
+
+    getDeadlineColor(deadline) {
+        const daysUntil = this.getDaysUntilDeadline(deadline);
+
+        if (daysUntil < 0) return '#ef4444'; // Überschritten - Rot
+        if (daysUntil < 1) return '#ef4444'; // <24h - Rot
+        if (daysUntil < 3) return '#f59e0b'; // 1-3 Tage - Orange
+        if (daysUntil < 7) return '#fbbf24'; // 3-7 Tage - Gelb
+        return '#ffffff'; // >7 Tage - Weiß (Normal)
+    }
+
+    getDeadlineColorClass(deadline) {
+        const daysUntil = this.getDaysUntilDeadline(deadline);
+
+        if (daysUntil < 0) return 'deadline-overdue'; // Überschritten
+        if (daysUntil < 1) return 'deadline-urgent'; // <24h
+        if (daysUntil < 3) return 'deadline-soon'; // 1-3 Tage
+        if (daysUntil < 7) return 'deadline-warning'; // 3-7 Tage
+        return 'deadline-normal'; // >7 Tage
+    }
+
+    getDaysUntilDeadline(deadline) {
+        if (!deadline) return null;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const deadlineDate = new Date(deadline);
+        deadlineDate.setHours(0, 0, 0, 0);
+        const diffTime = deadlineDate - today;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays;
     }
 
     drawParticles() {
@@ -1785,11 +1911,18 @@ class Orgaversum {
     }
 
     renderRetroMoon(moon) {
+        // Format deadline if exists
+        const deadlineText = moon.deadline ? this.formatDeadlineShort(moon.deadline) : '';
+        const deadlineClass = moon.deadline ? this.getDeadlineColorClass(moon.deadline) : '';
+
         let html = `
             <div class="retro-item retro-moon" data-id="${moon.id}" data-type="moon">
                 <div class="retro-item-header">
                     <span class="retro-item-icon">◐</span>
-                    <span class="retro-item-name">${moon.name}</span>
+                    <span class="retro-item-name">
+                        ${moon.name}
+                        ${deadlineText ? `<span class="retro-deadline ${deadlineClass}">${deadlineText}</span>` : ''}
+                    </span>
                     <div class="retro-item-actions">
                         <button class="retro-action retro-focus" title="Fokus">◎</button>
                         <button class="retro-action retro-edit" title="Bearbeiten">✎</button>
@@ -1980,7 +2113,8 @@ class Orgaversum {
                 color: color,
                 phase: Math.random() * Math.PI * 2,
                 stations: [],
-                rocketStatus: 'none'
+                rocketStatus: 'none',
+                deadline: null  // Deadline für Mond
             };
             this.moons.push(childObj);
         }
