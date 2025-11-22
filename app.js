@@ -1450,76 +1450,134 @@ class Orgaversum {
             const daysUntil = this.getDaysUntilDeadline(moon.deadline);
 
             if (daysUntil !== null) {
+                ctx.save();
+
                 if (daysUntil < 0) {
-                    // Überschritten - Roter Blitz-Effekt (verstärkt)
+                    // Überschritten - Roter Blitz-Nebel
                     const blinkIntensity = Math.sin(this.time * 10) * 0.5 + 0.5;
 
-                    // Mehrere pulsierende Ringe
-                    for (let i = 0; i < 4; i++) {
+                    // Mehrere pulsierende Nebel-Schichten
+                    for (let layer = 0; layer < 3; layer++) {
+                        const nebelRadius = moon.radius + 35 + layer * 15;
+                        const gradient = ctx.createRadialGradient(
+                            moon.x, moon.y, moon.radius,
+                            moon.x, moon.y, nebelRadius
+                        );
+                        gradient.addColorStop(0, `rgba(239, 68, 68, ${0.4 * blinkIntensity})`);
+                        gradient.addColorStop(0.5, `rgba(239, 68, 68, ${0.25 * blinkIntensity})`);
+                        gradient.addColorStop(1, 'transparent');
+
                         ctx.beginPath();
-                        ctx.arc(moon.x, moon.y, moon.radius + 15 + i * 5, 0, Math.PI * 2);
-                        ctx.strokeStyle = `rgba(239, 68, 68, ${(1 - i * 0.2) * blinkIntensity * 0.8})`;
-                        ctx.lineWidth = 4;
-                        ctx.stroke();
+                        ctx.arc(moon.x, moon.y, nebelRadius, 0, Math.PI * 2);
+                        ctx.fillStyle = gradient;
+                        ctx.fill();
                     }
 
-                    // Blitz-Symbole
+                    // Energieblitze
                     const lightningCount = 8;
                     for (let i = 0; i < lightningCount; i++) {
-                        const angle = (Math.PI * 2 / lightningCount) * i + this.time * 2;
-                        const startRadius = moon.radius + 12;
-                        const endRadius = moon.radius + 28;
+                        const angle = (Math.PI * 2 / lightningCount) * i + this.time * 3;
+                        const length = 25 + Math.sin(this.time * 5 + i) * 10;
+
+                        const gradient = ctx.createLinearGradient(
+                            moon.x + Math.cos(angle) * (moon.radius + 5),
+                            moon.y + Math.sin(angle) * (moon.radius + 5),
+                            moon.x + Math.cos(angle) * (moon.radius + length),
+                            moon.y + Math.sin(angle) * (moon.radius + length)
+                        );
+                        gradient.addColorStop(0, `rgba(255, 100, 100, ${blinkIntensity})`);
+                        gradient.addColorStop(1, 'transparent');
+
                         ctx.beginPath();
                         ctx.moveTo(
-                            moon.x + Math.cos(angle) * startRadius,
-                            moon.y + Math.sin(angle) * startRadius
+                            moon.x + Math.cos(angle) * (moon.radius + 5),
+                            moon.y + Math.sin(angle) * (moon.radius + 5)
                         );
                         ctx.lineTo(
-                            moon.x + Math.cos(angle) * endRadius,
-                            moon.y + Math.sin(angle) * endRadius
+                            moon.x + Math.cos(angle) * (moon.radius + length),
+                            moon.y + Math.sin(angle) * (moon.radius + length)
                         );
-                        ctx.strokeStyle = `rgba(239, 68, 68, ${blinkIntensity * 0.9})`;
-                        ctx.lineWidth = 3;
+                        ctx.strokeStyle = gradient;
+                        ctx.lineWidth = 4;
                         ctx.stroke();
                     }
                 } else if (daysUntil < 1) {
-                    // <24h - Rot blinkend (verstärkt)
+                    // <24h - Rot blinkender Nebel
                     const blinkIntensity = Math.sin(this.time * 8) * 0.5 + 0.5;
 
-                    for (let i = 0; i < 2; i++) {
+                    // Roter Nebel
+                    for (let layer = 0; layer < 2; layer++) {
+                        const nebelRadius = moon.radius + 30 + layer * 12;
+                        const gradient = ctx.createRadialGradient(
+                            moon.x, moon.y, moon.radius,
+                            moon.x, moon.y, nebelRadius
+                        );
+                        gradient.addColorStop(0, `rgba(239, 68, 68, ${0.5 * blinkIntensity})`);
+                        gradient.addColorStop(0.6, `rgba(220, 38, 38, ${0.3 * blinkIntensity})`);
+                        gradient.addColorStop(1, 'transparent');
+
                         ctx.beginPath();
-                        ctx.arc(moon.x, moon.y, moon.radius + 12 + i * 6, 0, Math.PI * 2);
-                        ctx.strokeStyle = `rgba(239, 68, 68, ${blinkIntensity * (1 - i * 0.3)})`;
-                        ctx.lineWidth = 5;
-                        ctx.stroke();
+                        ctx.arc(moon.x, moon.y, nebelRadius, 0, Math.PI * 2);
+                        ctx.fillStyle = gradient;
+                        ctx.fill();
                     }
                 } else if (daysUntil < 3) {
-                    // 1-3 Tage - Orange pulsierend (verstärkt)
+                    // 1-3 Tage - Orange pulsierender Nebel
                     const pulseIntensity = Math.sin(this.time * 3) * 0.4 + 0.6;
-                    const pulseRadius = moon.radius + 10 + pulseIntensity * 6;
+                    const pulseSize = 8 + pulseIntensity * 10;
 
-                    ctx.beginPath();
-                    ctx.arc(moon.x, moon.y, pulseRadius, 0, Math.PI * 2);
-                    ctx.strokeStyle = `rgba(245, 158, 11, ${pulseIntensity * 0.9})`;
-                    ctx.lineWidth = 5;
-                    ctx.stroke();
+                    // Orange Nebel mit Pulsieren
+                    for (let layer = 0; layer < 2; layer++) {
+                        const nebelRadius = moon.radius + 25 + pulseSize + layer * 10;
+                        const gradient = ctx.createRadialGradient(
+                            moon.x, moon.y, moon.radius,
+                            moon.x, moon.y, nebelRadius
+                        );
+                        gradient.addColorStop(0, `rgba(245, 158, 11, ${0.6 * pulseIntensity})`);
+                        gradient.addColorStop(0.5, `rgba(251, 146, 60, ${0.4 * pulseIntensity})`);
+                        gradient.addColorStop(1, 'transparent');
 
-                    // Zusätzlicher äußerer Ring
-                    ctx.beginPath();
-                    ctx.arc(moon.x, moon.y, pulseRadius + 6, 0, Math.PI * 2);
-                    ctx.strokeStyle = `rgba(245, 158, 11, ${pulseIntensity * 0.5})`;
-                    ctx.lineWidth = 3;
-                    ctx.stroke();
-                } else if (daysUntil < 7) {
-                    // 3-7 Tage - Gelber Schimmer (verstärkt)
-                    for (let i = 0; i < 2; i++) {
                         ctx.beginPath();
-                        ctx.arc(moon.x, moon.y, moon.radius + 10 + i * 5, 0, Math.PI * 2);
-                        ctx.strokeStyle = `rgba(251, 191, 36, ${0.7 - i * 0.3})`;
-                        ctx.lineWidth = 4;
-                        ctx.stroke();
+                        ctx.arc(moon.x, moon.y, nebelRadius, 0, Math.PI * 2);
+                        ctx.fillStyle = gradient;
+                        ctx.fill();
+                    }
+
+                    // Zusätzliche Partikel-Wolke
+                    const particleGradient = ctx.createRadialGradient(
+                        moon.x, moon.y, moon.radius + 5,
+                        moon.x, moon.y, moon.radius + 35 + pulseSize
+                    );
+                    particleGradient.addColorStop(0, `rgba(251, 191, 36, ${0.3 * pulseIntensity})`);
+                    particleGradient.addColorStop(1, 'transparent');
+
+                    ctx.beginPath();
+                    ctx.arc(moon.x, moon.y, moon.radius + 35 + pulseSize, 0, Math.PI * 2);
+                    ctx.fillStyle = particleGradient;
+                    ctx.fill();
+                } else if (daysUntil < 7) {
+                    // 3-7 Tage - Gelber Schimmer-Nebel
+                    const shimmerIntensity = Math.sin(this.time * 2) * 0.15 + 0.75;
+
+                    // Gelber Nebel
+                    for (let layer = 0; layer < 2; layer++) {
+                        const nebelRadius = moon.radius + 20 + layer * 10;
+                        const gradient = ctx.createRadialGradient(
+                            moon.x, moon.y, moon.radius,
+                            moon.x, moon.y, nebelRadius
+                        );
+                        gradient.addColorStop(0, `rgba(251, 191, 36, ${0.5 * shimmerIntensity})`);
+                        gradient.addColorStop(0.6, `rgba(250, 204, 21, ${0.3 * shimmerIntensity})`);
+                        gradient.addColorStop(1, 'transparent');
+
+                        ctx.beginPath();
+                        ctx.arc(moon.x, moon.y, nebelRadius, 0, Math.PI * 2);
+                        ctx.fillStyle = gradient;
+                        ctx.fill();
                     }
                 }
+
+                ctx.restore();
             }
         }
 
