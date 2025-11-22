@@ -1544,13 +1544,13 @@ class Orgaversum {
     returnRocketToBase(rocketIndex) {
         const rocket = this.flyingRockets[rocketIndex];
 
-        // Set rocket to return mode
+        // Set rocket to return mode - return to rocket selector (top right)
         rocket.returning = true;
         rocket.returnProgress = 0;
         rocket.returnStartX = rocket.target.x;
         rocket.returnStartY = rocket.target.y;
-        rocket.returnEndX = 20;
-        rocket.returnEndY = window.innerHeight / 2;
+        rocket.returnEndX = window.innerWidth - 100;
+        rocket.returnEndY = 70;
     }
 
     deleteStation() {
@@ -2849,10 +2849,10 @@ class Orgaversum {
             this.saveData();
         }
 
-        // Add new rocket to the array
+        // Add new rocket to the array - start from rocket selector (top right)
         this.flyingRockets.push({
-            startX: 20,
-            startY: window.innerHeight / 2,
+            startX: window.innerWidth - 100,
+            startY: 70,
             endX: target.x,
             endY: target.y,
             progress: 0,
@@ -2916,10 +2916,19 @@ class Orgaversum {
                 const currentX = screenStart.x + (screenEnd.x - screenStart.x) * returnProgress;
                 const currentY = screenStart.y + (screenEnd.y - screenStart.y) * returnProgress - Math.sin(returnProgress * Math.PI) * 100;
 
-                // Draw rocket image
+                // Calculate rotation angle for flight direction
+                const dx = screenEnd.x - screenStart.x;
+                const dy = screenEnd.y - screenStart.y;
+                const angle = Math.atan2(dy, dx) + Math.PI / 2; // +90° to point right
+
+                // Draw rocket image with rotation
                 const img = this.imageCache.get(rocket.image);
                 if (img && img.complete) {
-                    this.ctx.drawImage(img, currentX - 20, currentY - 20, 40, 40);
+                    this.ctx.save();
+                    this.ctx.translate(currentX, currentY);
+                    this.ctx.rotate(angle);
+                    this.ctx.drawImage(img, -20, -20, 40, 40);
+                    this.ctx.restore();
                 } else {
                     // Fallback to emoji if image not loaded
                     this.ctx.font = '30px Arial';
@@ -2949,10 +2958,19 @@ class Orgaversum {
                 const currentX = screenStart.x + (screenEnd.x - screenStart.x) * progress;
                 const currentY = screenStart.y + (screenEnd.y - screenStart.y) * progress - Math.sin(progress * Math.PI) * 100;
 
-                // Draw rocket image
+                // Draw rocket image with rotation pointing in flight direction
                 const img = this.imageCache.get(rocket.image);
                 if (img && img.complete) {
-                    this.ctx.drawImage(img, currentX - 20, currentY - 20, 40, 40);
+                    // Calculate angle from start to end for rotation
+                    const dx = screenEnd.x - screenStart.x;
+                    const dy = screenEnd.y - screenStart.y;
+                    const angle = Math.atan2(dy, dx) + Math.PI / 2; // +90° to point right
+
+                    this.ctx.save();
+                    this.ctx.translate(currentX, currentY);
+                    this.ctx.rotate(angle);
+                    this.ctx.drawImage(img, -20, -20, 40, 40);
+                    this.ctx.restore();
                 } else {
                     // Fallback to emoji if image not loaded
                     this.ctx.font = '30px Arial';
