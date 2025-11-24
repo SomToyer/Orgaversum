@@ -503,6 +503,11 @@ class Orgaversum {
 
         // Delete selected object when Delete or Backspace is pressed
         if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedObject) {
+            // Don't delete if an input is focused - allow normal text editing
+            if (isInputFocused) {
+                return;
+            }
+
             // Prevent default backspace behavior (going back in browser)
             e.preventDefault();
 
@@ -510,12 +515,6 @@ class Orgaversum {
             const modals = ['modal', 'editModal', 'stationModal', 'previewModal', 'rocketStatusModal'];
             const anyModalOpen = modals.some(id => !document.getElementById(id).classList.contains('hidden'));
             if (anyModalOpen) return;
-
-            // Don't delete if an input is focused
-            const activeElement = document.activeElement;
-            if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
-                return;
-            }
 
             // Delete the selected object
             const id = this.selectedObject.id;
@@ -2284,12 +2283,13 @@ class Orgaversum {
                 } else if (station.type === 'audio') {
                     // Circle for audio
                     ctx.arc(0, 0, 5, 0, Math.PI * 2);
-                } else {
-                    // Diamond for notes
-                    ctx.moveTo(0, -6);
-                    ctx.lineTo(6, 0);
-                    ctx.lineTo(0, 6);
-                    ctx.lineTo(-6, 0);
+                } else if (station.type === 'note') {
+                    // Larger diamond for notes
+                    const noteSize = 10;
+                    ctx.moveTo(0, -noteSize);
+                    ctx.lineTo(noteSize, 0);
+                    ctx.lineTo(0, noteSize);
+                    ctx.lineTo(-noteSize, 0);
                     ctx.closePath();
                 }
 
@@ -2301,6 +2301,38 @@ class Orgaversum {
                     ctx.strokeStyle = '#fff';
                     ctx.lineWidth = 2;
                     ctx.stroke();
+                }
+
+                // For notes, draw preview text
+                if (station.type === 'note') {
+                    ctx.restore();
+                    ctx.save();
+                    ctx.translate(pos.x, pos.y);
+
+                    // Get first few words of note
+                    const maxLength = 20;
+                    let previewText = station.data || '';
+                    if (previewText.length > maxLength) {
+                        previewText = previewText.substring(0, maxLength) + '...';
+                    }
+
+                    // Draw text below the diamond
+                    ctx.font = '11px "Segoe UI", sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'top';
+
+                    // Black shadow for readability
+                    ctx.shadowColor = '#000000';
+                    ctx.shadowBlur = 4;
+                    ctx.shadowOffsetX = 1;
+                    ctx.shadowOffsetY = 1;
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText(previewText, 0, 14);
+
+                    // Reset shadow
+                    ctx.shadowBlur = 0;
+                    ctx.shadowOffsetX = 0;
+                    ctx.shadowOffsetY = 0;
                 }
             }
 
