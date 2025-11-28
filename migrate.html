@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orgaversum - Daten Migration</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            margin: 0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+        .section {
+            margin: 30px 0;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+        button {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 10px;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: scale(1.05);
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .success {
+            background: #10b981;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            display: none;
+        }
+        .error {
+            background: #ef4444;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            display: none;
+        }
+        .info {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        pre {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            max-height: 300px;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #fbbf24;
+        }
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.8;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌟 Orgaversum Daten-Migration</h1>
+
+        <div class="section">
+            <h2>📊 Aktuelle Daten im Browser</h2>
+            <div id="stats" class="stats"></div>
+            <div id="dataPreview"></div>
+        </div>
+
+        <div class="section">
+            <h2>🔄 Migration</h2>
+            <button id="checkBtn" onclick="checkData()">1. Daten prüfen</button>
+            <button id="migrateBtn" onclick="migrateData()" disabled>2. In Datenbank übertragen</button>
+            <button id="viewBtn" onclick="window.location.href='index.html'" disabled>3. Orgaversum öffnen</button>
+
+            <div id="successMsg" class="success">✓ Migration erfolgreich!</div>
+            <div id="errorMsg" class="error"></div>
+            <div id="infoMsg" class="info" style="display: none;"></div>
+        </div>
+
+        <div class="section">
+            <h2>💾 Daten exportieren/importieren</h2>
+            <button onclick="exportData()">Daten exportieren (JSON)</button>
+            <button onclick="document.getElementById('importFile').click()">Daten importieren</button>
+            <input type="file" id="importFile" style="display: none" accept=".json" onchange="importData(event)">
+        </div>
+    </div>
+
+    <script>
+        let currentData = null;
+
+        function checkData() {
+            try {
+                const data = localStorage.getItem('orgaversum');
+
+                if (!data) {
+                    showError('Keine Daten im localStorage gefunden!');
+                    return;
+                }
+
+                currentData = JSON.parse(data);
+
+                // Zeige Statistiken
+                const stats = {
+                    'Sonnen': currentData.suns?.length || 0,
+                    'Planeten': currentData.planets?.length || 0,
+                    'Monde': currentData.moons?.length || 0,
+                    'Verbindungen': currentData.connections?.length || 0
+                };
+
+                let statsHTML = '';
+                for (const [label, value] of Object.entries(stats)) {
+                    statsHTML += `
+                        <div class="stat">
+                            <div class="stat-value">${value}</div>
+                            <div class="stat-label">${label}</div>
+                        </div>
+                    `;
+                }
+                document.getElementById('stats').innerHTML = statsHTML;
+
+                // Zeige Preview
+                document.getElementById('dataPreview').innerHTML = `
+                    <div class="info">
+                        <strong>Vorschau:</strong>
+                        <pre>${JSON.stringify(currentData, null, 2).substring(0, 500)}...</pre>
+                    </div>
+                `;
+
+                document.getElementById('migrateBtn').disabled = false;
+                showInfo('✓ Daten gefunden! Bereit zur Migration.');
+
+            } catch (error) {
+                showError('Fehler beim Lesen der Daten: ' + error.message);
+            }
+        }
+
+        async function migrateData() {
+            if (!currentData) {
+                showError('Bitte zuerst Daten prüfen!');
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:3000/api/state', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(currentData)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    document.getElementById('successMsg').style.display = 'block';
+                    document.getElementById('viewBtn').disabled = false;
+                    showInfo('Deine Daten wurden erfolgreich in die Datenbank übertragen!');
+                } else {
+                    showError('Fehler beim Speichern: ' + result.error);
+                }
+
+            } catch (error) {
+                showError('Server nicht erreichbar! Stelle sicher, dass der Server läuft (npm start)');
+            }
+        }
+
+        function exportData() {
+            try {
+                const data = localStorage.getItem('orgaversum');
+                if (!data) {
+                    showError('Keine Daten zum Exportieren vorhanden!');
+                    return;
+                }
+
+                const blob = new Blob([data], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `orgaversum-backup-${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+
+                showInfo('✓ Daten exportiert!');
+            } catch (error) {
+                showError('Fehler beim Export: ' + error.message);
+            }
+        }
+
+        async function importData(event) {
+            try {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                const text = await file.text();
+                const data = JSON.parse(text);
+
+                localStorage.setItem('orgaversum', text);
+                currentData = data;
+
+                showInfo('✓ Daten importiert! Klicke auf "Daten prüfen".');
+                document.getElementById('importFile').value = '';
+
+            } catch (error) {
+                showError('Fehler beim Import: ' + error.message);
+            }
+        }
+
+        function showError(msg) {
+            const el = document.getElementById('errorMsg');
+            el.textContent = msg;
+            el.style.display = 'block';
+            setTimeout(() => el.style.display = 'none', 5000);
+        }
+
+        function showInfo(msg) {
+            const el = document.getElementById('infoMsg');
+            el.textContent = msg;
+            el.style.display = 'block';
+        }
+
+        // Auto-check beim Laden
+        window.addEventListener('DOMContentLoaded', () => {
+            checkData();
+        });
+    </script>
+</body>
+</html>
