@@ -19,9 +19,16 @@ class Orgaversum {
         this.dragging = null;
         this.hovering = null;
         this.hoveringStation = null;
+        this.selectedObject = null;
+        this.selectedObjects = [];
         this.connectMode = false;
         this.connectFirst = null;
         this.mousePos = { x: 0, y: 0 };
+
+        // Box selection state
+        this.isBoxSelecting = false;
+        this.boxStart = null;
+        this.boxEnd = null;
 
         // Zoom and pan state
         this.scale = 1;
@@ -29,6 +36,7 @@ class Orgaversum {
         this.offsetY = 0;
         this.isPanning = false;
         this.lastPanPos = { x: 0, y: 0 };
+        this.galaxyView = false;
 
         // Station state
         this.currentStationType = null;
@@ -36,18 +44,31 @@ class Orgaversum {
         this.previewingStation = null;
         this.previewingMoon = null;
 
+        // Add button state
+        this.hoveringAddButton = null;
+
         // Animation
         this.time = 0;
         this.particles = [];
 
         // Rocket state
         this.selectedRocket = null;
-        this.flyingRocket = null;
+        this.flyingRockets = [];
         this.rocketTarget = null;
+        this.statusModalMoon = null;
 
         // Drag and drop state
         this.draggedFile = null;
         this.dropTarget = null;
+
+        // Undo/Redo state
+        this.history = [];
+        this.currentHistoryIndex = -1;
+        this.maxHistory = 50;
+        this.isRestoringState = false;
+
+        // Collapse/Expand state for list view
+        this.collapsedItems = new Set();
 
         // Colors
         this.planetColors = [
@@ -72,9 +93,24 @@ class Orgaversum {
 
     init() {
         this.resize();
+        this.loadRocketImages();
         this.loadData();
         this.setupEventListeners();
         this.animate();
+    }
+
+    loadRocketImages() {
+        // Preload rocket images
+        const rocketImages = {
+            'images/rocket-red.png': new Image(),
+            'images/rocket-blue.png': new Image(),
+            'images/rocket-green.png': new Image()
+        };
+
+        Object.keys(rocketImages).forEach(path => {
+            rocketImages[path].src = path;
+            this.imageCache.set(path, rocketImages[path]);
+        });
     }
 
     resize() {
@@ -102,12 +138,16 @@ class Orgaversum {
         // Paste event for screenshots
         document.addEventListener('paste', (e) => this.onPaste(e));
 
+        // Keyboard events
+        document.addEventListener('keydown', (e) => this.onKeyDown(e));
+
         // Buttons
         document.getElementById('addSun').addEventListener('click', () => this.showModal('sun'));
         document.getElementById('addPlanet').addEventListener('click', () => this.showModal('planet'));
         document.getElementById('addMoon').addEventListener('click', () => this.showModal('moon'));
         document.getElementById('toggleConnect').addEventListener('click', () => this.toggleConnectMode());
-        document.getElementById('clearAll').addEventListener('click', () => this.clearAll());
+        document.getElementById('undoBtn').addEventListener('click', () => this.undo());
+        document.getElementById('redoBtn').addEventListener('click', () => this.redo());
 
         // Modal
         document.getElementById('modalCancel').addEventListener('click', () => this.hideModal());
@@ -168,6 +208,18 @@ class Orgaversum {
             rocket.addEventListener('click', () => this.selectRocket(rocket));
         });
 
+        // Rocket Status Modal
+        document.getElementById('statusTerraformed').addEventListener('click', () => this.setRocketStatus('terraformed'));
+        document.getElementById('statusWaiting').addEventListener('click', () => this.setRocketStatus('waiting'));
+        document.getElementById('statusRemove').addEventListener('click', () => this.setRocketStatus('remove'));
+        document.getElementById('statusCancel').addEventListener('click', () => this.hideRocketStatusModal());
+
+        // Multi-Edit Modal
+        document.getElementById('multiApplyColor').addEventListener('click', () => this.applyMultiColor());
+        document.getElementById('multiApplyDeadline').addEventListener('click', () => this.applyMultiDeadline());
+        document.getElementById('multiDeleteAll').addEventListener('click', () => this.deleteMultiSelected());
+        document.getElementById('multiEditCancel').addEventListener('click', () => this.hideMultiEditModal());
+
         // Canvas drag and drop for files
         this.canvas.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -213,6 +265,31 @@ class Orgaversum {
             }
         }
 
+        // Check if clicking on add button
+        const addButtonClick = this.getAddButtonAt(pos.x, pos.y);
+        if (addButtonClick) {
+            this.handleAddButtonClick(addButtonClick.parent, addButtonClick.type);
+            return;
+        }
+
+        // Check if clicking on object with orbiting rocket
+        let obj = this.getObjectAt(pos.x, pos.y);
+        if (obj) {
+            const rocketIndex = this.flyingRockets.findIndex(r => r.orbiting && r.target.id === obj.id);
+            if (rocketIndex !== -1) {
+                // For moons, show status modal
+                if (obj.type === 'moon') {
+                    this.showRocketStatusModal(obj);
+                    return;
+                } else {
+                    // For planets and suns, remove the rocket
+                    this.createParticles(this.flyingRockets[rocketIndex].target.x, this.flyingRockets[rocketIndex].target.y, 15);
+                    this.flyingRockets.splice(rocketIndex, 1);
+                    return;
+                }
+            }
+        }
+
         // Check for station click first
         const stationClick = this.getStationAt(pos.x, pos.y);
         if (stationClick) {
@@ -220,18 +297,54 @@ class Orgaversum {
             return;
         }
 
-        const obj = this.getObjectAt(pos.x, pos.y);
+        // Reuse obj variable (already declared above)
+        if (!obj) obj = this.getObjectAt(pos.x, pos.y);
 
         if (this.connectMode && obj) {
             this.handleConnect(obj);
         } else if (obj) {
+            // Clicking on an object
+            if (e.shiftKey) {
+                // Shift+Click: toggle selection
+                const index = this.selectedObjects.indexOf(obj);
+                if (index > -1) {
+                    this.selectedObjects.splice(index, 1);
+                } else {
+                    this.selectedObjects.push(obj);
+                }
+            } else {
+                // Normal click: select only this object (unless already in multi-selection)
+                if (!this.selectedObjects.includes(obj)) {
+                    this.selectedObjects = [obj];
+                }
+            }
+
+            // Start dragging selected objects
             this.dragging = obj;
             this.dragging.offsetX = pos.x - obj.x;
             this.dragging.offsetY = pos.y - obj.y;
+
+            // Store initial positions for all selected objects
+            this.selectedObjects.forEach(selectedObj => {
+                selectedObj.dragStartX = selectedObj.x;
+                selectedObj.dragStartY = selectedObj.y;
+            });
+
+            this.selectedObject = obj; // For backward compatibility
         } else {
-            // Pan when clicking on empty space
-            this.isPanning = true;
-            this.lastPanPos = { x: screenX, y: screenY };
+            // Clicking on empty space
+            if (e.shiftKey) {
+                // Shift+Click on empty: start box selection
+                this.isBoxSelecting = true;
+                this.boxStart = { x: pos.x, y: pos.y };
+                this.boxEnd = { x: pos.x, y: pos.y };
+            } else {
+                // Normal click on empty: pan and deselect
+                this.isPanning = true;
+                this.lastPanPos = { x: screenX, y: screenY };
+                this.selectedObjects = [];
+                this.selectedObject = null;
+            }
         }
     }
 
@@ -251,23 +364,72 @@ class Orgaversum {
         const pos = this.getMousePos(e);
         this.mousePos = pos;
 
+        if (this.isBoxSelecting) {
+            // Update box selection end point
+            this.boxEnd = { x: pos.x, y: pos.y };
+            this.canvas.style.cursor = 'crosshair';
+            return;
+        }
+
         if (this.dragging) {
-            this.dragging.x = pos.x - this.dragging.offsetX;
-            this.dragging.y = pos.y - this.dragging.offsetY;
+            // Calculate the delta movement
+            const deltaX = (pos.x - this.dragging.offsetX) - this.dragging.x;
+            const deltaY = (pos.y - this.dragging.offsetY) - this.dragging.y;
+
+            // Move all selected objects
+            this.selectedObjects.forEach(obj => {
+                const newX = obj.dragStartX + deltaX;
+                const newY = obj.dragStartY + deltaY;
+
+                // Check collision and adjust position if needed
+                const adjustedPos = this.resolveCollision(obj, newX, newY);
+                obj.x = adjustedPos.x;
+                obj.y = adjustedPos.y;
+            });
+
             this.saveData();
         } else {
+            // Check for add button hover first
+            const addButtonHover = this.getAddButtonAt(pos.x, pos.y);
+            this.hoveringAddButton = addButtonHover;
+
             // Check for station hover
             const stationHover = this.getStationAt(pos.x, pos.y);
             this.hoveringStation = stationHover;
 
             this.hovering = this.getObjectAt(pos.x, pos.y);
-            this.canvas.style.cursor = (this.hovering || this.hoveringStation) ? 'pointer' : 'grab';
+            this.canvas.style.cursor = (this.hovering || this.hoveringStation || this.hoveringAddButton) ? 'pointer' : 'grab';
         }
     }
 
     onMouseUp() {
+        if (this.isBoxSelecting) {
+            // Finalize box selection
+            this.selectObjectsInBox();
+            this.isBoxSelecting = false;
+            this.boxStart = null;
+            this.boxEnd = null;
+        }
+
         this.dragging = null;
         this.isPanning = false;
+    }
+
+    selectObjectsInBox() {
+        if (!this.boxStart || !this.boxEnd) return;
+
+        const minX = Math.min(this.boxStart.x, this.boxEnd.x);
+        const maxX = Math.max(this.boxStart.x, this.boxEnd.x);
+        const minY = Math.min(this.boxStart.y, this.boxEnd.y);
+        const maxY = Math.max(this.boxStart.y, this.boxEnd.y);
+
+        const allObjects = [...this.suns, ...this.planets, ...this.moons];
+        this.selectedObjects = allObjects.filter(obj => {
+            return obj.x >= minX && obj.x <= maxX && obj.y >= minY && obj.y <= maxY;
+        });
+
+        // Set selectedObject to first one for backward compatibility
+        this.selectedObject = this.selectedObjects.length > 0 ? this.selectedObjects[0] : null;
     }
 
     onDoubleClick(e) {
@@ -275,7 +437,12 @@ class Orgaversum {
         const obj = this.getObjectAt(pos.x, pos.y);
 
         if (obj) {
-            this.showEditModal(obj);
+            // If multiple objects selected, show multi-edit modal
+            if (this.selectedObjects.length > 1) {
+                this.showMultiEditModal();
+            } else {
+                this.showEditModal(obj);
+            }
         }
     }
 
@@ -312,6 +479,62 @@ class Orgaversum {
                 reader.readAsDataURL(file);
                 break;
             }
+        }
+    }
+
+    onKeyDown(e) {
+        // Check if input is focused
+        const activeElement = document.activeElement;
+        const isInputFocused = activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA');
+
+        // Undo with Ctrl+Z
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !isInputFocused) {
+            e.preventDefault();
+            this.undo();
+            return;
+        }
+
+        // Redo with Ctrl+Y
+        if ((e.ctrlKey || e.metaKey) && e.key === 'y' && !isInputFocused) {
+            e.preventDefault();
+            this.redo();
+            return;
+        }
+
+        // Delete selected object when Delete or Backspace is pressed
+        if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedObject) {
+            // Don't delete if an input is focused - allow normal text editing
+            if (isInputFocused) {
+                return;
+            }
+
+            // Prevent default backspace behavior (going back in browser)
+            e.preventDefault();
+
+            // Don't delete if a modal is open
+            const modals = ['modal', 'editModal', 'stationModal', 'previewModal', 'rocketStatusModal'];
+            const anyModalOpen = modals.some(id => !document.getElementById(id).classList.contains('hidden'));
+            if (anyModalOpen) return;
+
+            // Delete the selected object
+            const id = this.selectedObject.id;
+
+            // Remove from arrays
+            this.suns = this.suns.filter(s => s.id !== id);
+            this.planets = this.planets.filter(p => p.id !== id);
+            this.moons = this.moons.filter(m => m.id !== id);
+
+            // Remove connections
+            this.connections = this.connections.filter(c => c.from !== id && c.to !== id);
+
+            // Create particles for visual feedback
+            this.createParticles(this.selectedObject.x, this.selectedObject.y, 30);
+
+            // Clear selection
+            this.selectedObject = null;
+            this.dragging = null;
+
+            this.saveData();
         }
     }
 
@@ -380,10 +603,10 @@ class Orgaversum {
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
 
-        // Zoom factor
-        const zoomIntensity = 0.1;
+        // Zoom factor - reduced sensitivity for touchpad
+        const zoomIntensity = 0.05;
         const delta = e.deltaY > 0 ? -zoomIntensity : zoomIntensity;
-        const newScale = Math.max(0.1, Math.min(5, this.scale * (1 + delta)));
+        const newScale = Math.max(0.05, Math.min(5, this.scale * (1 + delta)));
 
         // Zoom towards mouse position
         const worldX = (mouseX - this.offsetX) / this.scale;
@@ -393,6 +616,9 @@ class Orgaversum {
 
         this.offsetX = mouseX - worldX * this.scale;
         this.offsetY = mouseY - worldY * this.scale;
+
+        // Activate galaxy view when zoomed out far enough
+        this.galaxyView = this.scale < 0.15;
     }
 
     getObjectAt(x, y) {
@@ -417,6 +643,160 @@ class Orgaversum {
         return null;
     }
 
+    checkCollision(obj, x, y) {
+        // Minimum distance between object edges (buffer)
+        const minBuffer = 20;
+
+        // Get all objects except the one being moved
+        const allObjects = [...this.suns, ...this.planets, ...this.moons];
+
+        for (const other of allObjects) {
+            if (other === obj) continue;
+
+            const dist = Math.hypot(x - other.x, y - other.y);
+            const minDist = obj.radius + other.radius + minBuffer;
+
+            if (dist < minDist) {
+                return { collision: true, other: other, dist: dist, minDist: minDist };
+            }
+        }
+
+        return { collision: false };
+    }
+
+    resolveCollision(obj, x, y) {
+        const collision = this.checkCollision(obj, x, y);
+
+        if (!collision.collision) {
+            return { x: x, y: y };
+        }
+
+        // Push object away from collision
+        const other = collision.other;
+        const angle = Math.atan2(y - other.y, x - other.x);
+        const minDist = obj.radius + other.radius + 20;
+
+        return {
+            x: other.x + Math.cos(angle) * minDist,
+            y: other.y + Math.sin(angle) * minDist
+        };
+    }
+
+    findNonCollidingPosition(obj, preferredX, preferredY) {
+        // Try the preferred position first
+        if (!this.checkCollision(obj, preferredX, preferredY).collision) {
+            return { x: preferredX, y: preferredY };
+        }
+
+        // Try positions in a spiral pattern
+        const step = 30;
+        const maxAttempts = 50;
+
+        for (let attempt = 1; attempt < maxAttempts; attempt++) {
+            const angle = attempt * 0.5; // Spiral angle
+            const distance = attempt * step;
+
+            const x = preferredX + Math.cos(angle) * distance;
+            const y = preferredY + Math.sin(angle) * distance;
+
+            if (!this.checkCollision(obj, x, y).collision) {
+                return { x: x, y: y };
+            }
+        }
+
+        // If all else fails, return preferred position (will be pushed away)
+        return this.resolveCollision(obj, preferredX, preferredY);
+    }
+
+    getAddButtonPosition(obj) {
+        // Position: oben rechts vom Objekt
+        const offset = obj.radius + 15;
+        const angle = -Math.PI / 4; // 45 Grad oben rechts
+        return {
+            x: obj.x + Math.cos(angle) * offset,
+            y: obj.y + Math.sin(angle) * offset
+        };
+    }
+
+    getAddButtonAt(x, y) {
+        if (this.galaxyView) return null;
+
+        // Check add buttons for planets (erscheinen bei Sonnen)
+        for (const sun of this.suns) {
+            const buttonPos = this.getAddButtonPosition(sun);
+            const dist = Math.hypot(x - buttonPos.x, y - buttonPos.y);
+            if (dist <= 12) {
+                return { parent: sun, type: 'planet' };
+            }
+        }
+
+        // Check add buttons for moons (erscheinen bei Planeten)
+        for (const planet of this.planets) {
+            const buttonPos = this.getAddButtonPosition(planet);
+            const dist = Math.hypot(x - buttonPos.x, y - buttonPos.y);
+            if (dist <= 10) {
+                return { parent: planet, type: 'moon' };
+            }
+        }
+
+        return null;
+    }
+
+    drawAddButton(obj, type) {
+        if (this.galaxyView) return;
+
+        const ctx = this.ctx;
+        const buttonPos = this.getAddButtonPosition(obj);
+        const radius = type === 'planet' ? 12 : 10;
+        const isHovered = this.hoveringAddButton &&
+                         this.hoveringAddButton.parent === obj &&
+                         this.hoveringAddButton.type === type;
+
+        ctx.save();
+
+        // Weißer Kreis mit Schatten
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+        ctx.shadowBlur = 8;
+        ctx.shadowOffsetX = 2;
+        ctx.shadowOffsetY = 2;
+
+        ctx.beginPath();
+        ctx.arc(buttonPos.x, buttonPos.y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = isHovered ? '#ffffff' : 'rgba(255, 255, 255, 0.9)';
+        ctx.fill();
+
+        if (isHovered) {
+            ctx.strokeStyle = '#6366f1';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // Reset shadow
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+
+        // Plus-Symbol (+)
+        const lineLength = radius * 0.6;
+        ctx.strokeStyle = isHovered ? '#6366f1' : '#333';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+
+        // Horizontale Linie
+        ctx.beginPath();
+        ctx.moveTo(buttonPos.x - lineLength, buttonPos.y);
+        ctx.lineTo(buttonPos.x + lineLength, buttonPos.y);
+        ctx.stroke();
+
+        // Vertikale Linie
+        ctx.beginPath();
+        ctx.moveTo(buttonPos.x, buttonPos.y - lineLength);
+        ctx.lineTo(buttonPos.x, buttonPos.y + lineLength);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
     getStationAt(x, y) {
         for (const moon of this.moons) {
             if (!moon.stations) continue;
@@ -436,8 +816,7 @@ class Orgaversum {
 
     getStationPosition(moon, index, total) {
         const orbitRadius = moon.radius + 20;
-        const angleOffset = (Math.PI * 2 / total) * index;
-        const angle = this.time * 0.5 + angleOffset;
+        const angle = (Math.PI * 2 / total) * index;
 
         return {
             x: moon.x + Math.cos(angle) * orbitRadius,
@@ -485,12 +864,133 @@ class Orgaversum {
                     from: this.connectFirst.id,
                     to: obj.id
                 });
+
+                // If connecting moon to planet, set moon's color to planet's color
+                let moon = null;
+                let planet = null;
+                let sun = null;
+
+                if (this.connectFirst.type === 'moon' && obj.type === 'planet') {
+                    moon = this.connectFirst;
+                    planet = obj;
+                } else if (this.connectFirst.type === 'planet' && obj.type === 'moon') {
+                    planet = this.connectFirst;
+                    moon = obj;
+                } else if (this.connectFirst.type === 'planet' && obj.type === 'sun') {
+                    planet = this.connectFirst;
+                    sun = obj;
+                } else if (this.connectFirst.type === 'sun' && obj.type === 'planet') {
+                    sun = this.connectFirst;
+                    planet = obj;
+                }
+
+                // Set moon color to planet color
+                if (moon && planet && !moon.colorManuallySet) {
+                    moon.color = { ...planet.color };
+                }
+
+                // Set planet color to sun color
+                if (planet && sun && !planet.colorManuallySet) {
+                    planet.color = { ...sun.color };
+
+                    // Update all connected moons to match planet's new color
+                    this.connections.forEach(conn => {
+                        let connectedMoon = null;
+                        if (conn.from === planet.id) {
+                            const obj = this.getObjectById(conn.to);
+                            if (obj && obj.type === 'moon') connectedMoon = obj;
+                        } else if (conn.to === planet.id) {
+                            const obj = this.getObjectById(conn.from);
+                            if (obj && obj.type === 'moon') connectedMoon = obj;
+                        }
+                        if (connectedMoon && !connectedMoon.colorManuallySet) {
+                            connectedMoon.color = { ...planet.color };
+                        }
+                    });
+                }
             }
 
             this.createParticles(obj.x, obj.y, 20);
             this.connectFirst = null;
+            this.updatePlanetStatuses();
             this.saveData();
         }
+    }
+
+    handleAddButtonClick(parent, type) {
+        // Prompt for name
+        const typeName = type === 'planet' ? 'Planet' : 'Mond';
+        const defaultName = `${typeName} ${this.nextId}`;
+        const name = prompt(`Name für neuen ${typeName}:`, defaultName);
+
+        if (!name || !name.trim()) return;
+
+        // Preferred position near parent (rechts unten)
+        const angle = Math.PI / 4; // 45 Grad
+        const distance = parent.radius + 150 + Math.random() * 50;
+        const preferredX = parent.x + Math.cos(angle) * distance;
+        const preferredY = parent.y + Math.sin(angle) * distance;
+
+        let newObj = null;
+
+        if (type === 'planet') {
+            // Create planet with temporary position
+            const color = this.planetColors[Math.floor(Math.random() * this.planetColors.length)];
+            const radius = 40 + Math.random() * 20;
+            newObj = {
+                id: this.nextId++,
+                type: 'planet',
+                name: name.trim(),
+                x: 0,
+                y: 0,
+                radius: radius,
+                color: color,
+                rotation: Math.random() * Math.PI * 2,
+                rotationSpeed: 0.001 + Math.random() * 0.002
+            };
+
+            // Find non-colliding position
+            const pos = this.findNonCollidingPosition(newObj, preferredX, preferredY);
+            newObj.x = pos.x;
+            newObj.y = pos.y;
+
+            this.planets.push(newObj);
+        } else {
+            // Create moon with temporary position
+            const radius = 15 + Math.random() * 10;
+            const moon = {
+                id: this.nextId++,
+                type: 'moon',
+                name: name.trim(),
+                x: 0,
+                y: 0,
+                radius: radius,
+                color: parent.color, // Use parent planet's color
+                phase: Math.random() * Math.PI * 2,
+                stations: [],
+                deadline: null
+            };
+
+            // Find non-colliding position
+            const pos = this.findNonCollidingPosition(moon, preferredX, preferredY);
+            moon.x = pos.x;
+            moon.y = pos.y;
+
+            this.moons.push(moon);
+            newObj = moon;
+        }
+
+        // Create connection to parent
+        this.connections.push({
+            from: parent.id,
+            to: newObj.id
+        });
+
+        // Particle effects
+        this.createParticles(newObj.x, newObj.y, 30);
+        this.createParticles(parent.x, parent.y, 15);
+
+        this.saveData();
     }
 
     // Modal
@@ -536,6 +1036,8 @@ class Orgaversum {
         const input = document.getElementById('editNameInput');
         const colorPicker = document.getElementById('colorPicker');
         const stationControls = document.getElementById('stationControls');
+        const deadlineControls = document.getElementById('deadlineControls');
+        const deadlinePicker = document.getElementById('deadlinePicker');
 
         input.value = obj.name;
         colorPicker.value = obj.color.main;
@@ -544,11 +1046,20 @@ class Orgaversum {
         input.focus();
         input.select();
 
-        // Show station controls only for moons
+        // Show station controls and deadline picker only for moons
         if (obj.type === 'moon') {
             stationControls.classList.remove('hidden');
+            deadlineControls.classList.remove('hidden');
+
+            // Set deadline value if it exists
+            if (obj.deadline) {
+                deadlinePicker.value = obj.deadline;
+            } else {
+                deadlinePicker.value = '';
+            }
         } else {
             stationControls.classList.add('hidden');
+            deadlineControls.classList.add('hidden');
         }
     }
 
@@ -568,10 +1079,22 @@ class Orgaversum {
         }
 
         // Update color
+        const oldColor = this.editingObj.color.main;
         this.editingObj.color = {
             main: colorValue,
             glow: this.hexToRgba(colorValue, 0.3)
         };
+
+        // Mark color as manually set if changed (for moons and planets)
+        if (oldColor !== colorValue && (this.editingObj.type === 'moon' || this.editingObj.type === 'planet')) {
+            this.editingObj.colorManuallySet = true;
+        }
+
+        // Update deadline for moons
+        if (this.editingObj.type === 'moon') {
+            const deadlineValue = document.getElementById('deadlinePicker').value;
+            this.editingObj.deadline = deadlineValue || null;
+        }
 
         this.saveData();
         this.hideEditModal();
@@ -602,6 +1125,80 @@ class Orgaversum {
         this.saveData();
     }
 
+    // Multi-Edit Modal
+    showMultiEditModal() {
+        const modal = document.getElementById('multiEditModal');
+        const count = document.getElementById('multiEditCount');
+
+        count.textContent = `${this.selectedObjects.length} Objekte ausgewählt`;
+
+        modal.classList.remove('hidden');
+    }
+
+    hideMultiEditModal() {
+        document.getElementById('multiEditModal').classList.add('hidden');
+    }
+
+    applyMultiColor() {
+        const colorValue = document.getElementById('multiColorPicker').value;
+
+        this.selectedObjects.forEach(obj => {
+            const oldColor = obj.color.main;
+            obj.color = {
+                main: colorValue,
+                glow: this.hexToRgba(colorValue, 0.3)
+            };
+
+            // Mark color as manually set if changed (for moons and planets)
+            if (oldColor !== colorValue && (obj.type === 'moon' || obj.type === 'planet')) {
+                obj.colorManuallySet = true;
+            }
+        });
+
+        this.saveData();
+    }
+
+    applyMultiDeadline() {
+        const deadlineValue = document.getElementById('multiDeadlinePicker').value;
+
+        // Apply deadline only to moons
+        this.selectedObjects.forEach(obj => {
+            if (obj.type === 'moon') {
+                obj.deadline = deadlineValue || null;
+            }
+        });
+
+        this.saveData();
+    }
+
+    deleteMultiSelected() {
+        if (this.selectedObjects.length === 0) return;
+
+        // Collect IDs to delete
+        const idsToDelete = this.selectedObjects.map(obj => obj.id);
+
+        // Create particles at each object's position
+        this.selectedObjects.forEach(obj => {
+            this.createParticles(obj.x, obj.y, 30);
+        });
+
+        // Remove from suns, planets and moons
+        this.suns = this.suns.filter(s => !idsToDelete.includes(s.id));
+        this.planets = this.planets.filter(p => !idsToDelete.includes(p.id));
+        this.moons = this.moons.filter(m => !idsToDelete.includes(m.id));
+
+        // Remove connections
+        this.connections = this.connections.filter(c =>
+            !idsToDelete.includes(c.from) && !idsToDelete.includes(c.to)
+        );
+
+        // Clear selection
+        this.selectedObjects = [];
+
+        this.hideMultiEditModal();
+        this.saveData();
+    }
+
     // Create objects
     addSun(name) {
         const sunColors = [
@@ -610,16 +1207,27 @@ class Orgaversum {
             { main: '#fb923c', glow: 'rgba(251, 146, 60, 0.4)' },
         ];
         const color = sunColors[Math.floor(Math.random() * sunColors.length)];
+        const radius = 60 + Math.random() * 30;
+
+        // Preferred position
+        const preferredX = 150 + Math.random() * (this.canvas.width - 300);
+        const preferredY = 150 + Math.random() * (this.canvas.height - 300);
+
         const sun = {
             id: this.nextId++,
             type: 'sun',
             name: name,
-            x: 150 + Math.random() * (this.canvas.width - 300),
-            y: 150 + Math.random() * (this.canvas.height - 300),
-            radius: 60 + Math.random() * 30,
+            x: 0,
+            y: 0,
+            radius: radius,
             color: color,
             pulsePhase: Math.random() * Math.PI * 2
         };
+
+        // Find non-colliding position
+        const pos = this.findNonCollidingPosition(sun, preferredX, preferredY);
+        sun.x = pos.x;
+        sun.y = pos.y;
 
         this.suns.push(sun);
         this.createParticles(sun.x, sun.y, 40);
@@ -628,17 +1236,28 @@ class Orgaversum {
 
     addPlanet(name) {
         const color = this.planetColors[Math.floor(Math.random() * this.planetColors.length)];
+        const radius = 40 + Math.random() * 20;
+
+        // Preferred position
+        const preferredX = 150 + Math.random() * (this.canvas.width - 300);
+        const preferredY = 150 + Math.random() * (this.canvas.height - 300);
+
         const planet = {
             id: this.nextId++,
             type: 'planet',
             name: name,
-            x: 150 + Math.random() * (this.canvas.width - 300),
-            y: 150 + Math.random() * (this.canvas.height - 300),
-            radius: 40 + Math.random() * 20,
+            x: 0,
+            y: 0,
+            radius: radius,
             color: color,
             rotation: Math.random() * Math.PI * 2,
             rotationSpeed: 0.001 + Math.random() * 0.002
         };
+
+        // Find non-colliding position
+        const pos = this.findNonCollidingPosition(planet, preferredX, preferredY);
+        planet.x = pos.x;
+        planet.y = pos.y;
 
         this.planets.push(planet);
         this.createParticles(planet.x, planet.y, 30);
@@ -647,17 +1266,29 @@ class Orgaversum {
 
     addMoon(name) {
         const color = this.moonColors[Math.floor(Math.random() * this.moonColors.length)];
+        const radius = 15 + Math.random() * 10;
+
+        // Preferred position
+        const preferredX = 150 + Math.random() * (this.canvas.width - 300);
+        const preferredY = 150 + Math.random() * (this.canvas.height - 300);
+
         const moon = {
             id: this.nextId++,
             type: 'moon',
             name: name,
-            x: 150 + Math.random() * (this.canvas.width - 300),
-            y: 150 + Math.random() * (this.canvas.height - 300),
-            radius: 15 + Math.random() * 10,
+            x: 0,
+            y: 0,
+            radius: radius,
             color: color,
             phase: Math.random() * Math.PI * 2,
-            stations: []
+            stations: [],
+            deadline: null  // Deadline für Mond
         };
+
+        // Find non-colliding position
+        const pos = this.findNonCollidingPosition(moon, preferredX, preferredY);
+        moon.x = pos.x;
+        moon.y = pos.y;
 
         this.moons.push(moon);
         this.createParticles(moon.x, moon.y, 20);
@@ -813,6 +1444,114 @@ class Orgaversum {
         this.previewingStation = null;
     }
 
+    showRocketStatusModal(moon) {
+        this.statusModalMoon = moon;
+        const modal = document.getElementById('rocketStatusModal');
+        modal.classList.remove('hidden');
+    }
+
+    hideRocketStatusModal() {
+        document.getElementById('rocketStatusModal').classList.add('hidden');
+        this.statusModalMoon = null;
+    }
+
+    setRocketStatus(status) {
+        if (!this.statusModalMoon) return;
+
+        const moon = this.statusModalMoon;
+
+        if (status === 'terraformed') {
+            moon.rocketStatus = 'terraformed';
+            this.createParticles(moon.x, moon.y, 30);
+
+            // Send ALL rockets at this moon back to base
+            const rocketIndices = [];
+            this.flyingRockets.forEach((r, index) => {
+                if (r.target.id === moon.id && r.orbiting) {
+                    rocketIndices.push(index);
+                }
+            });
+
+            // Return all rockets (in reverse order to avoid index shifting)
+            for (let i = rocketIndices.length - 1; i >= 0; i--) {
+                this.returnRocketToBase(rocketIndices[i]);
+            }
+        } else if (status === 'waiting') {
+            moon.rocketStatus = 'waiting';
+            this.createParticles(moon.x, moon.y, 20);
+
+            // Send ALL rockets at this moon back to base
+            const rocketIndices = [];
+            this.flyingRockets.forEach((r, index) => {
+                if (r.target.id === moon.id && r.orbiting) {
+                    rocketIndices.push(index);
+                }
+            });
+
+            // Return all rockets (in reverse order to avoid index shifting)
+            for (let i = rocketIndices.length - 1; i >= 0; i--) {
+                this.returnRocketToBase(rocketIndices[i]);
+            }
+        } else if (status === 'remove') {
+            // Remove ALL rockets at this moon immediately
+            this.flyingRockets = this.flyingRockets.filter(r => r.target.id !== moon.id);
+            moon.rocketStatus = null;
+            this.createParticles(moon.x, moon.y, 15);
+        }
+
+        this.updatePlanetStatuses();
+        this.saveData();
+        this.hideRocketStatusModal();
+    }
+
+    updatePlanetStatuses() {
+        // Update status for all planets based on their moons
+        this.planets.forEach(planet => {
+            // Find all moons connected to this planet
+            const connectedMoonIds = [];
+
+            this.connections.forEach(conn => {
+                if (conn.from === planet.id) {
+                    const obj = this.getObjectById(conn.to);
+                    if (obj && obj.type === 'moon') {
+                        connectedMoonIds.push(obj.id);
+                    }
+                } else if (conn.to === planet.id) {
+                    const obj = this.getObjectById(conn.from);
+                    if (obj && obj.type === 'moon') {
+                        connectedMoonIds.push(obj.id);
+                    }
+                }
+            });
+
+            // If planet has moons
+            if (connectedMoonIds.length > 0) {
+                // Check if ALL moons are terraformed
+                const allTerraformed = connectedMoonIds.every(moonId => {
+                    const moon = this.moons.find(m => m.id === moonId);
+                    return moon && moon.rocketStatus === 'terraformed';
+                });
+
+                planet.rocketStatus = allTerraformed ? 'terraformed' : null;
+            } else {
+                // No moons, no status
+                planet.rocketStatus = null;
+            }
+        });
+    }
+
+    returnRocketToBase(rocketIndex) {
+        const rocket = this.flyingRockets[rocketIndex];
+
+        // Set rocket to return mode - return to rocket selector (top right)
+        rocket.returning = true;
+        rocket.returnProgress = 0;
+        rocket.returnStartX = rocket.target.x;
+        rocket.returnStartY = rocket.target.y;
+        rocket.returnEndX = window.innerWidth - 100;
+        rocket.returnEndY = 70;
+    }
+
     deleteStation() {
         if (!this.previewingMoon || !this.previewingStation) return;
 
@@ -874,7 +1613,7 @@ class Orgaversum {
     animate() {
         this.time += 0.016;
         this.updateParticles();
-        this.updateFlyingRocket();
+        this.updateFlyingRockets();
         this.draw();
         requestAnimationFrame(() => this.animate());
     }
@@ -887,50 +1626,66 @@ class Orgaversum {
         this.ctx.translate(this.offsetX, this.offsetY);
         this.ctx.scale(this.scale, this.scale);
 
-        // Draw connections
-        this.drawConnections();
+        if (this.galaxyView) {
+            // Galaxy view: only draw suns
+            this.suns.forEach(sun => this.drawSun(sun));
+        } else {
+            // Normal view: draw everything
+            // Draw connections
+            this.drawConnections();
 
-        // Draw connect preview line
-        if (this.connectMode && this.connectFirst) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.connectFirst.x, this.connectFirst.y);
-            this.ctx.lineTo(this.mousePos.x, this.mousePos.y);
-            this.ctx.strokeStyle = 'rgba(245, 158, 11, 0.5)';
-            this.ctx.lineWidth = 2 / this.scale;
-            this.ctx.setLineDash([5 / this.scale, 5 / this.scale]);
-            this.ctx.stroke();
-            this.ctx.setLineDash([]);
+            // Draw connect preview line
+            if (this.connectMode && this.connectFirst) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(this.connectFirst.x, this.connectFirst.y);
+                this.ctx.lineTo(this.mousePos.x, this.mousePos.y);
+                this.ctx.strokeStyle = 'rgba(245, 158, 11, 0.5)';
+                this.ctx.lineWidth = 2 / this.scale;
+                this.ctx.setLineDash([5 / this.scale, 5 / this.scale]);
+                this.ctx.stroke();
+                this.ctx.setLineDash([]);
+            }
+
+            // Draw suns (largest, background)
+            this.suns.forEach(sun => this.drawSun(sun));
+
+            // Draw planets
+            this.planets.forEach(planet => this.drawPlanet(planet));
+
+            // Draw moons
+            this.moons.forEach(moon => this.drawMoon(moon));
+
+            // Draw particles
+            this.drawParticles();
+
+            // Draw selection highlights
+            this.drawSelectionHighlights();
+
+            // Draw box selection
+            if (this.isBoxSelecting && this.boxStart && this.boxEnd) {
+                this.drawSelectionBox();
+            }
         }
-
-        // Draw suns (largest, background)
-        this.suns.forEach(sun => this.drawSun(sun));
-
-        // Draw planets
-        this.planets.forEach(planet => this.drawPlanet(planet));
-
-        // Draw moons
-        this.moons.forEach(moon => this.drawMoon(moon));
-
-        // Draw particles
-        this.drawParticles();
 
         // Restore transformation
         this.ctx.restore();
 
-        // Draw flying rocket (in screen space)
-        this.drawFlyingRocket();
+        if (!this.galaxyView) {
+            // Draw flying rockets (in screen space) - only in normal view
+            this.drawFlyingRockets();
+        }
 
         // Draw zoom indicator (in screen space)
         this.drawZoomIndicator();
     }
 
     drawZoomIndicator() {
-        if (this.scale === 1) return;
+        if (this.scale === 1 && !this.galaxyView) return;
 
         const ctx = this.ctx;
-        const text = `${Math.round(this.scale * 100)}%`;
+        const text = this.galaxyView ? '🌌 Galaxyansicht' : `${Math.round(this.scale * 100)}%`;
 
-        ctx.font = '12px "Segoe UI", sans-serif';
+        ctx.font = this.galaxyView ? 'bold 14px "Segoe UI", sans-serif' : '12px "Segoe UI", sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'bottom';
 
@@ -940,7 +1695,7 @@ class Orgaversum {
 
         // Background
         const metrics = ctx.measureText(text);
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillStyle = this.galaxyView ? 'rgba(99, 102, 241, 0.8)' : 'rgba(0, 0, 0, 0.6)';
         ctx.fillRect(
             x - metrics.width - padding,
             y - 14 - padding / 2,
@@ -953,34 +1708,93 @@ class Orgaversum {
         ctx.fillText(text, x, y);
     }
 
+    drawSelectionHighlights() {
+        const ctx = this.ctx;
+
+        this.selectedObjects.forEach(obj => {
+            ctx.save();
+
+            // Draw highlight ring around selected object
+            ctx.beginPath();
+            ctx.arc(obj.x, obj.y, obj.radius + 8, 0, Math.PI * 2);
+            ctx.strokeStyle = '#6366f1';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([5, 5]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw corner markers
+            const markerSize = 6;
+            const distance = obj.radius + 12;
+            const angles = [0, Math.PI / 2, Math.PI, Math.PI * 1.5];
+
+            angles.forEach(angle => {
+                const x = obj.x + Math.cos(angle) * distance;
+                const y = obj.y + Math.sin(angle) * distance;
+
+                ctx.fillStyle = '#6366f1';
+                ctx.fillRect(x - markerSize / 2, y - markerSize / 2, markerSize, markerSize);
+            });
+
+            ctx.restore();
+        });
+    }
+
+    drawSelectionBox() {
+        const ctx = this.ctx;
+        const minX = Math.min(this.boxStart.x, this.boxEnd.x);
+        const maxX = Math.max(this.boxStart.x, this.boxEnd.x);
+        const minY = Math.min(this.boxStart.y, this.boxEnd.y);
+        const maxY = Math.max(this.boxStart.y, this.boxEnd.y);
+
+        ctx.save();
+
+        // Fill
+        ctx.fillStyle = 'rgba(99, 102, 241, 0.1)';
+        ctx.fillRect(minX, minY, maxX - minX, maxY - minY);
+
+        // Border
+        ctx.strokeStyle = '#6366f1';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+        ctx.setLineDash([]);
+
+        ctx.restore();
+    }
+
     drawSun(sun) {
         const ctx = this.ctx;
         const isHovered = this.hovering === sun;
         const isConnecting = this.connectFirst === sun;
 
+        // In galaxy view, make suns larger for visibility but not too big
+        const galaxyScale = this.galaxyView ? 4 : 1;
+        const displayRadius = sun.radius * galaxyScale;
+
         // Pulsing effect
         const pulse = Math.sin(this.time * 2 + sun.pulsePhase) * 0.1 + 1;
 
         // Outer glow (corona)
-        const coronaSize = sun.radius * 0.8;
+        const coronaSize = displayRadius * 0.8;
         for (let i = 3; i >= 0; i--) {
             const gradient = ctx.createRadialGradient(
-                sun.x, sun.y, sun.radius * 0.5,
-                sun.x, sun.y, sun.radius + coronaSize * (i + 1) * 0.3 * pulse
+                sun.x, sun.y, displayRadius * 0.5,
+                sun.x, sun.y, displayRadius + coronaSize * (i + 1) * 0.3 * pulse
             );
             gradient.addColorStop(0, `rgba(255, 200, 50, ${0.3 - i * 0.07})`);
             gradient.addColorStop(1, 'transparent');
 
             ctx.beginPath();
-            ctx.arc(sun.x, sun.y, sun.radius + coronaSize * (i + 1) * 0.3 * pulse, 0, Math.PI * 2);
+            ctx.arc(sun.x, sun.y, displayRadius + coronaSize * (i + 1) * 0.3 * pulse, 0, Math.PI * 2);
             ctx.fillStyle = gradient;
             ctx.fill();
         }
 
         // Sun body
         const bodyGradient = ctx.createRadialGradient(
-            sun.x - sun.radius * 0.2, sun.y - sun.radius * 0.2, 0,
-            sun.x, sun.y, sun.radius
+            sun.x - displayRadius * 0.2, sun.y - displayRadius * 0.2, 0,
+            sun.x, sun.y, displayRadius
         );
         bodyGradient.addColorStop(0, '#fff5e0');
         bodyGradient.addColorStop(0.3, sun.color.main);
@@ -988,36 +1802,38 @@ class Orgaversum {
         bodyGradient.addColorStop(1, this.darkenColor(sun.color.main, 30));
 
         ctx.beginPath();
-        ctx.arc(sun.x, sun.y, sun.radius, 0, Math.PI * 2);
+        ctx.arc(sun.x, sun.y, displayRadius, 0, Math.PI * 2);
         ctx.fillStyle = bodyGradient;
         ctx.fill();
 
-        // Solar flares
-        ctx.save();
-        ctx.translate(sun.x, sun.y);
-        for (let i = 0; i < 8; i++) {
-            const angle = (Math.PI * 2 / 8) * i + this.time * 0.2;
-            const flareLength = sun.radius * 0.3 * (Math.sin(this.time * 3 + i) * 0.3 + 0.7);
+        // Solar flares (only in normal view)
+        if (!this.galaxyView) {
+            ctx.save();
+            ctx.translate(sun.x, sun.y);
+            for (let i = 0; i < 8; i++) {
+                const angle = (Math.PI * 2 / 8) * i + this.time * 0.2;
+                const flareLength = displayRadius * 0.3 * (Math.sin(this.time * 3 + i) * 0.3 + 0.7);
 
-            ctx.beginPath();
-            ctx.moveTo(
-                Math.cos(angle) * sun.radius * 0.9,
-                Math.sin(angle) * sun.radius * 0.9
-            );
-            ctx.lineTo(
-                Math.cos(angle) * (sun.radius + flareLength),
-                Math.sin(angle) * (sun.radius + flareLength)
-            );
-            ctx.strokeStyle = `rgba(255, 200, 100, ${0.5 + Math.sin(this.time * 3 + i) * 0.3})`;
-            ctx.lineWidth = 3;
-            ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(
+                    Math.cos(angle) * displayRadius * 0.9,
+                    Math.sin(angle) * displayRadius * 0.9
+                );
+                ctx.lineTo(
+                    Math.cos(angle) * (displayRadius + flareLength),
+                    Math.sin(angle) * (displayRadius + flareLength)
+                );
+                ctx.strokeStyle = `rgba(255, 200, 100, ${0.5 + Math.sin(this.time * 3 + i) * 0.3})`;
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            }
+            ctx.restore();
         }
-        ctx.restore();
 
-        // Highlight if hovered or connecting
-        if (isHovered || isConnecting) {
+        // Highlight if hovered or connecting (only in normal view)
+        if (!this.galaxyView && (isHovered || isConnecting)) {
             ctx.beginPath();
-            ctx.arc(sun.x, sun.y, sun.radius + 8, 0, Math.PI * 2);
+            ctx.arc(sun.x, sun.y, displayRadius + 8, 0, Math.PI * 2);
             ctx.strokeStyle = isConnecting ? '#f59e0b' : '#fff';
             ctx.lineWidth = 3;
             ctx.stroke();
@@ -1025,6 +1841,9 @@ class Orgaversum {
 
         // Name
         this.drawLabel(sun);
+
+        // Add button (Plus-Symbol zum Hinzufügen von Planeten)
+        this.drawAddButton(sun, 'planet');
     }
 
     drawConnections() {
@@ -1049,7 +1868,7 @@ class Orgaversum {
                 this.ctx.stroke();
 
                 // Flowing particles along connection
-                const progress = (this.time * 0.5) % 1;
+                const progress = (this.time * 0.2) % 1;
                 const px = from.x + (to.x - from.x) * progress;
                 const py = from.y + (to.y - from.y) * progress;
 
@@ -1129,6 +1948,15 @@ class Orgaversum {
             ctx.stroke();
         }
 
+        // Rocket status indicator (terraformed planet)
+        if (planet.rocketStatus === 'terraformed') {
+            ctx.beginPath();
+            ctx.arc(planet.x, planet.y, planet.radius + 8, 0, Math.PI * 2);
+            ctx.strokeStyle = '#10b981'; // Green
+            ctx.lineWidth = 4;
+            ctx.stroke();
+        }
+
         // Highlight if hovered or connecting
         if (isHovered || isConnecting) {
             ctx.beginPath();
@@ -1140,12 +1968,137 @@ class Orgaversum {
 
         // Name
         this.drawLabel(planet);
+
+        // Add button (Plus-Symbol zum Hinzufügen von Monden)
+        this.drawAddButton(planet, 'moon');
     }
 
     drawMoon(moon) {
         const ctx = this.ctx;
         const isHovered = this.hovering === moon;
         const isConnecting = this.connectFirst === moon;
+
+        // Deadline visual effects FIRST (before anything else, so they appear as background)
+        if (moon.deadline && !moon.rocketStatus && !this.galaxyView) {
+            const daysUntil = this.getDaysUntilDeadline(moon.deadline);
+
+            if (daysUntil !== null) {
+                ctx.save();
+
+                if (daysUntil < 0) {
+                    // Überschritten - Roter statischer Nebel
+                    const intensity = 0.75;
+
+                    // Mehrere Nebel-Schichten
+                    for (let layer = 0; layer < 4; layer++) {
+                        const nebelRadius = moon.radius + 40 + layer * 20;
+                        const gradient = ctx.createRadialGradient(
+                            moon.x, moon.y, moon.radius,
+                            moon.x, moon.y, nebelRadius
+                        );
+                        gradient.addColorStop(0, `rgba(239, 68, 68, ${0.7 * intensity})`);
+                        gradient.addColorStop(0.4, `rgba(239, 68, 68, ${0.5 * intensity})`);
+                        gradient.addColorStop(1, 'transparent');
+
+                        ctx.beginPath();
+                        ctx.arc(moon.x, moon.y, nebelRadius, 0, Math.PI * 2);
+                        ctx.fillStyle = gradient;
+                        ctx.fill();
+                    }
+
+                    // Statische Energieblitze
+                    const lightningCount = 8;
+                    for (let i = 0; i < lightningCount; i++) {
+                        const angle = (Math.PI * 2 / lightningCount) * i;
+                        const length = 30;
+
+                        const gradient = ctx.createLinearGradient(
+                            moon.x + Math.cos(angle) * moon.radius,
+                            moon.y + Math.sin(angle) * moon.radius,
+                            moon.x + Math.cos(angle) * (moon.radius + length),
+                            moon.y + Math.sin(angle) * (moon.radius + length)
+                        );
+                        gradient.addColorStop(0, `rgba(255, 80, 80, ${intensity * 0.9})`);
+                        gradient.addColorStop(1, 'transparent');
+
+                        ctx.beginPath();
+                        ctx.moveTo(
+                            moon.x + Math.cos(angle) * moon.radius,
+                            moon.y + Math.sin(angle) * moon.radius
+                        );
+                        ctx.lineTo(
+                            moon.x + Math.cos(angle) * (moon.radius + length),
+                            moon.y + Math.sin(angle) * (moon.radius + length)
+                        );
+                        ctx.strokeStyle = gradient;
+                        ctx.lineWidth = 5;
+                        ctx.stroke();
+                    }
+                } else if (daysUntil < 1) {
+                    // <24h - Roter statischer Nebel
+                    const intensity = 0.75;
+
+                    // Roter Nebel
+                    for (let layer = 0; layer < 3; layer++) {
+                        const nebelRadius = moon.radius + 35 + layer * 15;
+                        const gradient = ctx.createRadialGradient(
+                            moon.x, moon.y, moon.radius,
+                            moon.x, moon.y, nebelRadius
+                        );
+                        gradient.addColorStop(0, `rgba(239, 68, 68, ${0.8 * intensity})`);
+                        gradient.addColorStop(0.5, `rgba(220, 38, 38, ${0.5 * intensity})`);
+                        gradient.addColorStop(1, 'transparent');
+
+                        ctx.beginPath();
+                        ctx.arc(moon.x, moon.y, nebelRadius, 0, Math.PI * 2);
+                        ctx.fillStyle = gradient;
+                        ctx.fill();
+                    }
+                } else if (daysUntil < 3) {
+                    // 1-3 Tage - Orange statischer Nebel
+                    const intensity = 0.8;
+
+                    // Orange Nebel
+                    for (let layer = 0; layer < 3; layer++) {
+                        const nebelRadius = moon.radius + 46 + layer * 12;
+                        const gradient = ctx.createRadialGradient(
+                            moon.x, moon.y, moon.radius,
+                            moon.x, moon.y, nebelRadius
+                        );
+                        gradient.addColorStop(0, `rgba(245, 158, 11, ${0.8 * intensity})`);
+                        gradient.addColorStop(0.4, `rgba(251, 146, 60, ${0.6 * intensity})`);
+                        gradient.addColorStop(1, 'transparent');
+
+                        ctx.beginPath();
+                        ctx.arc(moon.x, moon.y, nebelRadius, 0, Math.PI * 2);
+                        ctx.fillStyle = gradient;
+                        ctx.fill();
+                    }
+                } else if (daysUntil < 7) {
+                    // 3-7 Tage - Gelber statischer Nebel
+                    const intensity = 0.8;
+
+                    // Gelber Nebel
+                    for (let layer = 0; layer < 3; layer++) {
+                        const nebelRadius = moon.radius + 25 + layer * 12;
+                        const gradient = ctx.createRadialGradient(
+                            moon.x, moon.y, moon.radius,
+                            moon.x, moon.y, nebelRadius
+                        );
+                        gradient.addColorStop(0, `rgba(251, 191, 36, ${0.7 * intensity})`);
+                        gradient.addColorStop(0.5, `rgba(250, 204, 21, ${0.5 * intensity})`);
+                        gradient.addColorStop(1, 'transparent');
+
+                        ctx.beginPath();
+                        ctx.arc(moon.x, moon.y, nebelRadius, 0, Math.PI * 2);
+                        ctx.fillStyle = gradient;
+                        ctx.fill();
+                    }
+                }
+
+                ctx.restore();
+            }
+        }
 
         // Glow effect
         const glowSize = isHovered || isConnecting ? 20 : 12;
@@ -1200,6 +2153,22 @@ class Orgaversum {
         });
 
         ctx.restore();
+
+        // Rocket status indicator
+        if (moon.rocketStatus) {
+            ctx.beginPath();
+            ctx.arc(moon.x, moon.y, moon.radius + 8, 0, Math.PI * 2);
+
+            if (moon.rocketStatus === 'terraformed') {
+                ctx.strokeStyle = '#10b981'; // Green
+                ctx.lineWidth = 4;
+            } else if (moon.rocketStatus === 'waiting') {
+                ctx.strokeStyle = '#ffffff'; // White
+                ctx.lineWidth = 4;
+            }
+
+            ctx.stroke();
+        }
 
         // Highlight if hovered or connecting
         if (isHovered || isConnecting) {
@@ -1313,12 +2282,13 @@ class Orgaversum {
                 } else if (station.type === 'audio') {
                     // Circle for audio
                     ctx.arc(0, 0, 5, 0, Math.PI * 2);
-                } else {
-                    // Diamond for notes
-                    ctx.moveTo(0, -6);
-                    ctx.lineTo(6, 0);
-                    ctx.lineTo(0, 6);
-                    ctx.lineTo(-6, 0);
+                } else if (station.type === 'note') {
+                    // Larger diamond for notes
+                    const noteSize = 10;
+                    ctx.moveTo(0, -noteSize);
+                    ctx.lineTo(noteSize, 0);
+                    ctx.lineTo(0, noteSize);
+                    ctx.lineTo(-noteSize, 0);
                     ctx.closePath();
                 }
 
@@ -1331,6 +2301,38 @@ class Orgaversum {
                     ctx.lineWidth = 2;
                     ctx.stroke();
                 }
+
+                // For notes, draw preview text
+                if (station.type === 'note') {
+                    ctx.restore();
+                    ctx.save();
+                    ctx.translate(pos.x, pos.y);
+
+                    // Get first few words of note
+                    const maxLength = 20;
+                    let previewText = station.data || '';
+                    if (previewText.length > maxLength) {
+                        previewText = previewText.substring(0, maxLength) + '...';
+                    }
+
+                    // Draw text below the diamond
+                    ctx.font = '11px "Segoe UI", sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'top';
+
+                    // Black shadow for readability
+                    ctx.shadowColor = '#000000';
+                    ctx.shadowBlur = 4;
+                    ctx.shadowOffsetX = 1;
+                    ctx.shadowOffsetY = 1;
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText(previewText, 0, 14);
+
+                    // Reset shadow
+                    ctx.shadowBlur = 0;
+                    ctx.shadowOffsetX = 0;
+                    ctx.shadowOffsetY = 0;
+                }
             }
 
             ctx.restore();
@@ -1340,33 +2342,81 @@ class Orgaversum {
     drawLabel(obj) {
         const ctx = this.ctx;
         const fontSizes = { sun: 28, planet: 24, moon: 18 };
-        const fontSize = fontSizes[obj.type] || 18;
+        let fontSize = fontSizes[obj.type] || 18;
+
+        // In galaxy view, make sun labels larger but proportional
+        if (this.galaxyView && obj.type === 'sun') {
+            fontSize = fontSize * 3.5; // Scale up for galaxy view (smaller than before)
+        }
 
         ctx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
         // Draw name in the CENTER/MIDDLE of the object
-        const y = obj.y;
+        let y = obj.y;
 
-        // Background
-        const metrics = ctx.measureText(obj.name);
-        const padding = 8;
-
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        ctx.fillRect(
-            obj.x - metrics.width / 2 - padding,
-            y - fontSize / 2 - padding / 2,
-            metrics.width + padding * 2,
-            fontSize + padding
-        );
-
-        // Text with glow
-        ctx.shadowColor = obj.color.main;
-        ctx.shadowBlur = 10;
-        ctx.fillStyle = '#fff';
+        // Text with black shadow for better readability
+        ctx.shadowColor = '#000000';
+        ctx.shadowBlur = this.galaxyView ? 12 : 8;
+        ctx.shadowOffsetX = this.galaxyView ? 3 : 2;
+        ctx.shadowOffsetY = this.galaxyView ? 3 : 2;
+        ctx.fillStyle = '#ffffff';
         ctx.fillText(obj.name, obj.x, y);
+
+        // For moons with deadline, draw the date below the name
+        if (obj.type === 'moon' && obj.deadline && !this.galaxyView) {
+            const dateFont = 12;
+            ctx.font = `${dateFont}px 'Segoe UI', sans-serif`;
+            const formattedDate = this.formatDeadlineShort(obj.deadline);
+            const dateY = y + fontSize / 2 + dateFont + 4;
+            ctx.fillStyle = this.getDeadlineColor(obj.deadline);
+            ctx.fillText(formattedDate, obj.x, dateY);
+        }
+
+        // Reset shadow
         ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+    }
+
+    formatDeadlineShort(deadline) {
+        if (!deadline) return '';
+        const date = new Date(deadline);
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        return `${day}.${month}.`;
+    }
+
+    getDeadlineColor(deadline) {
+        const daysUntil = this.getDaysUntilDeadline(deadline);
+
+        if (daysUntil < 0) return '#ef4444'; // Überschritten - Rot
+        if (daysUntil < 1) return '#ef4444'; // <24h - Rot
+        if (daysUntil < 3) return '#f59e0b'; // 1-3 Tage - Orange
+        if (daysUntil < 7) return '#fbbf24'; // 3-7 Tage - Gelb
+        return '#ffffff'; // >7 Tage - Weiß (Normal)
+    }
+
+    getDeadlineColorClass(deadline) {
+        const daysUntil = this.getDaysUntilDeadline(deadline);
+
+        if (daysUntil < 0) return 'deadline-overdue'; // Überschritten
+        if (daysUntil < 1) return 'deadline-urgent'; // <24h
+        if (daysUntil < 3) return 'deadline-soon'; // 1-3 Tage
+        if (daysUntil < 7) return 'deadline-warning'; // 3-7 Tage
+        return 'deadline-normal'; // >7 Tage
+    }
+
+    getDaysUntilDeadline(deadline) {
+        if (!deadline) return null;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const deadlineDate = new Date(deadline);
+        deadlineDate.setHours(0, 0, 0, 0);
+        const diffTime = deadlineDate - today;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays;
     }
 
     drawParticles() {
@@ -1418,18 +2468,64 @@ class Orgaversum {
 
         let html = '';
 
-        // Render suns
+        // Build hierarchical structure based on connections
+        // First, render suns with their connected planets
         this.suns.forEach(sun => {
-            html += this.renderRetroItem(sun, 'sun', '☀');
+            // Find planets connected to this sun
+            const connectedPlanets = this.getChildrenOf(sun.id, 'planet');
+            const hasChildren = connectedPlanets.length > 0;
+            const isCollapsed = this.collapsedItems.has(sun.id);
+
+            html += this.renderRetroItem(sun, 'sun', '☀', hasChildren);
+
+            if (hasChildren) {
+                html += `<div class="retro-children ${isCollapsed ? 'collapsed' : ''}" data-parent="${sun.id}">`;
+                connectedPlanets.forEach(planet => {
+                    // Find moons connected to this planet
+                    const connectedMoons = this.getChildrenOf(planet.id, 'moon');
+                    const planetHasChildren = connectedMoons.length > 0;
+                    const isPlanetCollapsed = this.collapsedItems.has(planet.id);
+
+                    html += this.renderRetroItem(planet, 'planet', '●', planetHasChildren);
+
+                    if (planetHasChildren) {
+                        html += `<div class="retro-children ${isPlanetCollapsed ? 'collapsed' : ''}" data-parent="${planet.id}">`;
+                        connectedMoons.forEach(moon => {
+                            html += this.renderRetroMoon(moon);
+                        });
+                        html += '</div>';
+                    }
+                });
+                html += '</div>';
+            }
         });
 
-        // Render planets
-        this.planets.forEach(planet => {
-            html += this.renderRetroItem(planet, 'planet', '●');
+        // Render orphaned planets (not connected to any sun)
+        const orphanedPlanets = this.planets.filter(planet =>
+            !this.connections.some(c => c.to === planet.id && this.getObjectById(c.from)?.type === 'sun')
+        );
+        orphanedPlanets.forEach(planet => {
+            // Find moons connected to this orphaned planet
+            const connectedMoons = this.getChildrenOf(planet.id, 'moon');
+            const hasChildren = connectedMoons.length > 0;
+            const isCollapsed = this.collapsedItems.has(planet.id);
+
+            html += this.renderRetroItem(planet, 'planet', '●', hasChildren);
+
+            if (hasChildren) {
+                html += `<div class="retro-children ${isCollapsed ? 'collapsed' : ''}" data-parent="${planet.id}">`;
+                connectedMoons.forEach(moon => {
+                    html += this.renderRetroMoon(moon);
+                });
+                html += '</div>';
+            }
         });
 
-        // Render moons with their stations
-        this.moons.forEach(moon => {
+        // Render orphaned moons (not connected to any planet)
+        const orphanedMoons = this.moons.filter(moon =>
+            !this.connections.some(c => c.to === moon.id && this.getObjectById(c.from)?.type === 'planet')
+        );
+        orphanedMoons.forEach(moon => {
             html += this.renderRetroMoon(moon);
         });
 
@@ -1439,13 +2535,75 @@ class Orgaversum {
         this.attachRetroListeners();
     }
 
-    renderRetroItem(obj, type, icon) {
+    getChildrenOf(parentId, childType) {
+        const children = [];
+        this.connections.forEach(conn => {
+            if (conn.from === parentId) {
+                const child = this.getObjectById(conn.to);
+                if (child && child.type === childType) {
+                    children.push(child);
+                }
+            }
+        });
+        return children;
+    }
+
+    isConnectedToSun(planetId) {
+        return this.connections.some(conn =>
+            (conn.from === planetId || conn.to === planetId) &&
+            (this.suns.find(s => s.id === conn.from) || this.suns.find(s => s.id === conn.to))
+        );
+    }
+
+    isConnectedToPlanet(moonId) {
+        return this.connections.some(conn =>
+            (conn.from === moonId || conn.to === moonId) &&
+            (this.planets.find(p => p.id === conn.from) || this.planets.find(p => p.id === conn.to))
+        );
+    }
+
+    getConnectedPlanets(sunId) {
+        const planetIds = [];
+        this.connections.forEach(conn => {
+            if (conn.from === sunId) {
+                const planet = this.planets.find(p => p.id === conn.to);
+                if (planet) planetIds.push(planet.id);
+            } else if (conn.to === sunId) {
+                const planet = this.planets.find(p => p.id === conn.from);
+                if (planet) planetIds.push(planet.id);
+            }
+        });
+        return planetIds.map(id => this.planets.find(p => p.id === id));
+    }
+
+    getConnectedMoons(planetId) {
+        const moonIds = [];
+        this.connections.forEach(conn => {
+            if (conn.from === planetId) {
+                const moon = this.moons.find(m => m.id === conn.to);
+                if (moon) moonIds.push(moon.id);
+            } else if (conn.to === planetId) {
+                const moon = this.moons.find(m => m.id === conn.from);
+                if (moon) moonIds.push(moon.id);
+            }
+        });
+        return moonIds.map(id => this.moons.find(m => m.id === id));
+    }
+
+    renderRetroItem(obj, type, icon, hasChildren = false) {
+        // Determine what child can be added (sun -> planet, planet -> moon)
+        const canAddChild = type === 'sun' || type === 'planet';
+        const isCollapsed = this.collapsedItems.has(obj.id);
+        const toggleIcon = hasChildren ? (isCollapsed ? '►' : '▼') : '';
+
         return `
             <div class="retro-item retro-${type}" data-id="${obj.id}" data-type="${type}">
                 <div class="retro-item-header">
+                    ${hasChildren ? `<span class="retro-toggle-icon" data-id="${obj.id}">${toggleIcon}</span>` : '<span class="retro-toggle-placeholder"></span>'}
                     <span class="retro-item-icon">${icon}</span>
                     <span class="retro-item-name">${obj.name}</span>
                     <div class="retro-item-actions">
+                        ${canAddChild ? '<button class="retro-action retro-add-child" title="Hinzufügen">+</button>' : ''}
                         <button class="retro-action retro-focus" title="Fokus">◎</button>
                         <button class="retro-action retro-edit" title="Bearbeiten">✎</button>
                         <button class="retro-action retro-delete" title="Löschen">×</button>
@@ -1456,11 +2614,18 @@ class Orgaversum {
     }
 
     renderRetroMoon(moon) {
+        // Format deadline if exists
+        const deadlineText = moon.deadline ? this.formatDeadlineShort(moon.deadline) : '';
+        const deadlineClass = moon.deadline ? this.getDeadlineColorClass(moon.deadline) : '';
+
         let html = `
             <div class="retro-item retro-moon" data-id="${moon.id}" data-type="moon">
                 <div class="retro-item-header">
                     <span class="retro-item-icon">◐</span>
-                    <span class="retro-item-name">${moon.name}</span>
+                    <span class="retro-item-name">
+                        ${moon.name}
+                        ${deadlineText ? `<span class="retro-deadline ${deadlineClass}">${deadlineText}</span>` : ''}
+                    </span>
                     <div class="retro-item-actions">
                         <button class="retro-action retro-focus" title="Fokus">◎</button>
                         <button class="retro-action retro-edit" title="Bearbeiten">✎</button>
@@ -1497,6 +2662,26 @@ class Orgaversum {
     attachRetroListeners() {
         const container = document.getElementById('retroList');
         if (!container) return;
+
+        // Toggle collapse/expand buttons
+        container.querySelectorAll('.retro-toggle-icon').forEach(toggle => {
+            toggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = parseInt(toggle.dataset.id);
+                this.toggleCollapseItem(id);
+            });
+        });
+
+        // Add child buttons
+        container.querySelectorAll('.retro-add-child').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const item = btn.closest('.retro-item');
+                const id = parseInt(item.dataset.id);
+                const type = item.dataset.type;
+                this.addChildToObject(id, type);
+            });
+        });
 
         // Focus buttons
         container.querySelectorAll('.retro-focus').forEach(btn => {
@@ -1584,6 +2769,92 @@ class Orgaversum {
         this.createParticles(obj.x, obj.y, 20);
     }
 
+    toggleCollapseItem(id) {
+        if (this.collapsedItems.has(id)) {
+            this.collapsedItems.delete(id);
+        } else {
+            this.collapsedItems.add(id);
+        }
+        this.updateRetroList();
+    }
+
+    addChildToObject(parentId, parentType) {
+        const parent = this.getObjectById(parentId);
+        if (!parent) return;
+
+        let childName = '';
+        let childType = '';
+
+        // Determine child type based on parent
+        if (parentType === 'sun') {
+            childName = prompt('Name des neuen Planeten:');
+            childType = 'planet';
+        } else if (parentType === 'planet') {
+            childName = prompt('Name des neuen Mondes:');
+            childType = 'moon';
+        } else {
+            return; // Moons can't have children
+        }
+
+        if (!childName || !childName.trim()) return;
+        childName = childName.trim();
+
+        // Create child object near parent
+        const angle = Math.random() * Math.PI * 2;
+        const distance = parent.radius + 100 + Math.random() * 50;
+        const childX = parent.x + Math.cos(angle) * distance;
+        const childY = parent.y + Math.sin(angle) * distance;
+
+        let childObj;
+
+        if (childType === 'planet') {
+            const color = this.planetColors[Math.floor(Math.random() * this.planetColors.length)];
+            childObj = {
+                id: this.nextId++,
+                type: 'planet',
+                name: childName,
+                x: childX,
+                y: childY,
+                radius: 40 + Math.random() * 20,
+                color: color,
+                rotation: Math.random() * Math.PI * 2,
+                rotationSpeed: 0.001 + Math.random() * 0.002,
+                status: 'normal'
+            };
+            this.planets.push(childObj);
+        } else if (childType === 'moon') {
+            // Use parent planet's color for new moon
+            const color = parent.color;
+            childObj = {
+                id: this.nextId++,
+                type: 'moon',
+                name: childName,
+                x: childX,
+                y: childY,
+                radius: 15 + Math.random() * 10,
+                color: color,
+                phase: Math.random() * Math.PI * 2,
+                stations: [],
+                rocketStatus: 'none',
+                deadline: null  // Deadline für Mond
+            };
+            this.moons.push(childObj);
+        }
+
+        // Create connection between parent and child
+        this.connections.push({
+            from: parent.id,
+            to: childObj.id
+        });
+
+        // Visual effects
+        this.createParticles(childObj.x, childObj.y, 30);
+        this.createParticles(parent.x, parent.y, 20);
+
+        // Save and update
+        this.saveData();
+    }
+
     // Rocket Methods
     selectRocket(rocketElement) {
         // Remove active class from all rockets
@@ -1594,69 +2865,215 @@ class Orgaversum {
 
         this.selectedRocket = {
             element: rocketElement,
-            color: rocketElement.dataset.color
+            color: rocketElement.dataset.color,
+            name: rocketElement.dataset.name,
+            image: rocketElement.dataset.image
         };
     }
 
     flyRocketTo(target) {
-        this.flyingRocket = {
-            startX: 20,
-            startY: window.innerHeight / 2,
+        // If target is a moon with completed terraforming, remove the status
+        if (target.type === 'moon' && target.rocketStatus === 'terraformed') {
+            target.rocketStatus = null;
+            this.createParticles(target.x, target.y, 20);
+            this.updatePlanetStatuses();
+            this.saveData();
+        }
+
+        // Add new rocket to the array - start from rocket selector (top right)
+        this.flyingRockets.push({
+            startX: window.innerWidth - 100,
+            startY: 70,
             endX: target.x,
             endY: target.y,
             progress: 0,
             target: target,
-            color: this.selectedRocket.color
-        };
+            color: this.selectedRocket.color,
+            name: this.selectedRocket.name,
+            image: this.selectedRocket.image,
+            orbiting: false,
+            orbitAngle: 0
+        });
 
         // Deselect rocket
         this.selectedRocket.element.classList.remove('active');
         this.selectedRocket = null;
     }
 
-    updateFlyingRocket() {
-        if (!this.flyingRocket) return;
+    updateFlyingRockets() {
+        // Update all flying rockets
+        this.flyingRockets = this.flyingRockets.filter(rocket => {
+            if (rocket.returning) {
+                // Returning to base
+                rocket.returnProgress += 0.01;
 
-        this.flyingRocket.progress += 0.02;
+                if (rocket.returnProgress >= 1) {
+                    // Rocket arrived at base, remove it
+                    this.createParticles(20, window.innerHeight / 2, 15);
+                    return false; // Remove from array
+                }
+            } else if (!rocket.orbiting) {
+                // Flying to target - slower speed (0.01 instead of 0.02)
+                rocket.progress += 0.01;
 
-        if (this.flyingRocket.progress >= 1) {
-            // Rocket arrived, open edit modal
-            this.showEditModal(this.flyingRocket.target);
-            this.flyingRocket = null;
-        }
+                if (rocket.progress >= 1) {
+                    // Rocket arrived, start orbiting
+                    rocket.orbiting = true;
+                    rocket.orbitAngle = 0;
+                    this.createParticles(rocket.target.x, rocket.target.y, 20);
+                }
+            } else {
+                // Orbiting around target - slower speed (0.015 instead of 0.03)
+                rocket.orbitAngle += 0.015;
+            }
+            return true; // Keep in array
+        });
     }
 
-    drawFlyingRocket() {
-        if (!this.flyingRocket) return;
+    drawFlyingRockets() {
+        // Draw all flying rockets
+        this.flyingRockets.forEach(rocket => {
+            this.ctx.save();
 
-        const { startX, startY, endX, endY, progress, color } = this.flyingRocket;
+            if (rocket.returning) {
+                // Returning to base
+                const { returnStartX, returnStartY, returnEndX, returnEndY, returnProgress, color } = rocket;
 
-        // Convert to screen coordinates
-        const screenStart = this.getScreenPos(startX / this.scale - this.offsetX / this.scale, startY / this.scale - this.offsetY / this.scale);
-        const screenEnd = this.getScreenPos(endX, endY);
+                // Convert to screen coordinates
+                const screenStart = this.getScreenPos(returnStartX, returnStartY);
+                const screenEnd = { x: returnEndX, y: returnEndY };
 
-        // Interpolate position with parabolic arc
-        const currentX = screenStart.x + (screenEnd.x - screenStart.x) * progress;
-        const currentY = screenStart.y + (screenEnd.y - screenStart.y) * progress - Math.sin(progress * Math.PI) * 100;
+                // Interpolate position with parabolic arc
+                const currentX = screenStart.x + (screenEnd.x - screenStart.x) * returnProgress;
+                const currentY = screenStart.y + (screenEnd.y - screenStart.y) * returnProgress - Math.sin(returnProgress * Math.PI) * 100;
 
-        // Draw rocket
-        this.ctx.save();
-        this.ctx.font = '30px Arial';
-        this.ctx.fillText('🚀', currentX - 15, currentY + 15);
+                // Calculate tangent to the parabolic arc for correct flight direction
+                const dx = screenEnd.x - screenStart.x;
+                const dy = screenEnd.y - screenStart.y - Math.cos(returnProgress * Math.PI) * Math.PI * 100;
+                const angle = Math.atan2(dy, dx) + Math.PI; // +180° correction
 
-        // Draw trail
-        for (let i = 0; i < 5; i++) {
-            const trailProgress = Math.max(0, progress - i * 0.05);
-            const trailX = screenStart.x + (screenEnd.x - screenStart.x) * trailProgress;
-            const trailY = screenStart.y + (screenEnd.y - screenStart.y) * trailProgress - Math.sin(trailProgress * Math.PI) * 100;
+                // Draw rocket image with rotation
+                const img = this.imageCache.get(rocket.image);
+                if (img && img.complete) {
+                    this.ctx.save();
+                    this.ctx.translate(currentX, currentY);
+                    this.ctx.rotate(angle);
+                    this.ctx.drawImage(img, -20, -20, 40, 40);
+                    this.ctx.restore();
+                } else {
+                    // Fallback to emoji if image not loaded
+                    this.ctx.font = '30px Arial';
+                    this.ctx.fillText('🚀', currentX - 15, currentY + 15);
+                }
 
-            this.ctx.beginPath();
-            this.ctx.arc(trailX, trailY, 3, 0, Math.PI * 2);
-            this.ctx.fillStyle = color + Math.floor((1 - i * 0.2) * 255).toString(16).padStart(2, '0');
-            this.ctx.fill();
-        }
+                // Draw trail
+                for (let i = 0; i < 5; i++) {
+                    const trailProgress = Math.max(0, returnProgress - i * 0.05);
+                    const trailX = screenStart.x + (screenEnd.x - screenStart.x) * trailProgress;
+                    const trailY = screenStart.y + (screenEnd.y - screenStart.y) * trailProgress - Math.sin(trailProgress * Math.PI) * 100;
 
-        this.ctx.restore();
+                    this.ctx.beginPath();
+                    this.ctx.arc(trailX, trailY, 3, 0, Math.PI * 2);
+                    this.ctx.fillStyle = color + Math.floor((1 - i * 0.2) * 255).toString(16).padStart(2, '0');
+                    this.ctx.fill();
+                }
+            } else if (!rocket.orbiting) {
+                // Flying to target
+                const { startX, startY, endX, endY, progress, color } = rocket;
+
+                // Convert to screen coordinates
+                const screenStart = this.getScreenPos(startX / this.scale - this.offsetX / this.scale, startY / this.scale - this.offsetY / this.scale);
+                const screenEnd = this.getScreenPos(endX, endY);
+
+                // Interpolate position with parabolic arc
+                const currentX = screenStart.x + (screenEnd.x - screenStart.x) * progress;
+                const currentY = screenStart.y + (screenEnd.y - screenStart.y) * progress - Math.sin(progress * Math.PI) * 100;
+
+                // Draw rocket image with rotation pointing in flight direction
+                const img = this.imageCache.get(rocket.image);
+                if (img && img.complete) {
+                    // Calculate tangent to the parabolic arc for correct flight direction
+                    const dx = screenEnd.x - screenStart.x;
+                    const dy = screenEnd.y - screenStart.y - Math.cos(progress * Math.PI) * Math.PI * 100;
+                    const angle = Math.atan2(dy, dx) + Math.PI; // +180° correction
+
+                    this.ctx.save();
+                    this.ctx.translate(currentX, currentY);
+                    this.ctx.rotate(angle);
+                    this.ctx.drawImage(img, -20, -20, 40, 40);
+                    this.ctx.restore();
+                } else {
+                    // Fallback to emoji if image not loaded
+                    this.ctx.font = '30px Arial';
+                    this.ctx.fillText('🚀', currentX - 15, currentY + 15);
+                }
+
+                // Draw trail
+                for (let i = 0; i < 5; i++) {
+                    const trailProgress = Math.max(0, progress - i * 0.05);
+                    const trailX = screenStart.x + (screenEnd.x - screenStart.x) * trailProgress;
+                    const trailY = screenStart.y + (screenEnd.y - screenStart.y) * trailProgress - Math.sin(trailProgress * Math.PI) * 100;
+
+                    this.ctx.beginPath();
+                    this.ctx.arc(trailX, trailY, 3, 0, Math.PI * 2);
+                    this.ctx.fillStyle = color + Math.floor((1 - i * 0.2) * 255).toString(16).padStart(2, '0');
+                    this.ctx.fill();
+                }
+            } else {
+                // Orbiting around target - draw in world coordinates
+                const { target, orbitAngle, color } = rocket;
+
+                // Apply transformation
+                this.ctx.translate(this.offsetX, this.offsetY);
+                this.ctx.scale(this.scale, this.scale);
+
+                // Calculate orbit position
+                const orbitRadius = target.radius + 40;
+                const rocketX = target.x + Math.cos(orbitAngle) * orbitRadius;
+                const rocketY = target.y + Math.sin(orbitAngle) * orbitRadius;
+
+                // Draw orbit path
+                this.ctx.beginPath();
+                this.ctx.arc(target.x, target.y, orbitRadius, 0, Math.PI * 2);
+                this.ctx.strokeStyle = color + '40';
+                this.ctx.lineWidth = 2 / this.scale;
+                this.ctx.setLineDash([5 / this.scale, 5 / this.scale]);
+                this.ctx.stroke();
+                this.ctx.setLineDash([]);
+
+                // Draw rocket with rotation tangent to orbit
+                this.ctx.save();
+                this.ctx.translate(rocketX, rocketY);
+                this.ctx.rotate(orbitAngle + Math.PI); // +180° correction
+                this.ctx.scale(1 / this.scale, 1 / this.scale);
+
+                // Draw rocket image
+                const img = this.imageCache.get(rocket.image);
+                if (img && img.complete) {
+                    this.ctx.drawImage(img, -20, -20, 40, 40);
+                } else {
+                    // Fallback to emoji if image not loaded
+                    this.ctx.font = '30px Arial';
+                    this.ctx.fillText('🚀', -15, 15);
+                }
+
+                this.ctx.restore();
+
+                // Draw trail particles
+                for (let i = 0; i < 3; i++) {
+                    const trailAngle = orbitAngle - (i + 1) * 0.3;
+                    const trailX = target.x + Math.cos(trailAngle) * orbitRadius;
+                    const trailY = target.y + Math.sin(trailAngle) * orbitRadius;
+
+                    this.ctx.beginPath();
+                    this.ctx.arc(trailX, trailY, 3 / this.scale, 0, Math.PI * 2);
+                    this.ctx.fillStyle = color + Math.floor((1 - i * 0.3) * 255).toString(16).padStart(2, '0');
+                    this.ctx.fill();
+                }
+            }
+
+            this.ctx.restore();
+        });
     }
 
     // Canvas Drag and Drop
@@ -1713,17 +3130,106 @@ class Orgaversum {
         return null;
     }
 
-    // Data persistence methods
-    async saveData() {
-        try {
-            const data = {
-                suns: this.suns,
-                planets: this.planets,
-                moons: this.moons,
-                connections: this.connections,
-                nextId: this.nextId
-            };
+    // Undo/Redo functionality
+    getCurrentState() {
+        return {
+            suns: JSON.parse(JSON.stringify(this.suns)),
+            planets: JSON.parse(JSON.stringify(this.planets)),
+            moons: JSON.parse(JSON.stringify(this.moons)),
+            connections: JSON.parse(JSON.stringify(this.connections)),
+            nextId: this.nextId
+        };
+    }
 
+    pushHistory() {
+        if (this.isRestoringState) return;
+
+        // Remove any redo history when making a new change
+        if (this.currentHistoryIndex < this.history.length - 1) {
+            this.history = this.history.slice(0, this.currentHistoryIndex + 1);
+        }
+
+        // Add current state to history
+        this.history.push(this.getCurrentState());
+
+        // Limit history size
+        if (this.history.length > this.maxHistory) {
+            this.history.shift();
+        } else {
+            this.currentHistoryIndex++;
+        }
+
+        this.updateUndoRedoButtons();
+    }
+
+    restoreState(state) {
+        this.isRestoringState = true;
+
+        this.suns = JSON.parse(JSON.stringify(state.suns));
+        this.planets = JSON.parse(JSON.stringify(state.planets));
+        this.moons = JSON.parse(JSON.stringify(state.moons));
+        this.connections = JSON.parse(JSON.stringify(state.connections));
+        this.nextId = state.nextId;
+
+        // Save to localStorage without creating history
+        const data = {
+            suns: this.suns,
+            planets: this.planets,
+            moons: this.moons,
+            connections: this.connections,
+            nextId: this.nextId
+        };
+        localStorage.setItem('orgaversum', JSON.stringify(data));
+        this.updateRetroList();
+
+        this.isRestoringState = false;
+    }
+
+    undo() {
+        if (this.currentHistoryIndex > 0) {
+            this.currentHistoryIndex--;
+            this.restoreState(this.history[this.currentHistoryIndex]);
+            this.updateUndoRedoButtons();
+        }
+    }
+
+    redo() {
+        if (this.currentHistoryIndex < this.history.length - 1) {
+            this.currentHistoryIndex++;
+            this.restoreState(this.history[this.currentHistoryIndex]);
+            this.updateUndoRedoButtons();
+        }
+    }
+
+    updateUndoRedoButtons() {
+        const undoBtn = document.getElementById('undoBtn');
+        const redoBtn = document.getElementById('redoBtn');
+
+        undoBtn.disabled = this.currentHistoryIndex <= 0;
+        redoBtn.disabled = this.currentHistoryIndex >= this.history.length - 1;
+    }
+
+    // Data persistence
+    async saveData() {
+        // Push to history before saving
+        if (!this.isRestoringState) {
+            this.pushHistory();
+        }
+
+        const data = {
+            suns: this.suns,
+            planets: this.planets,
+            moons: this.moons,
+            connections: this.connections,
+            nextId: this.nextId
+        };
+
+        // Always save to localStorage
+        localStorage.setItem('orgaversum', JSON.stringify(data));
+        this.updateRetroList();
+
+        // Try to save to server (if available)
+        try {
             const response = await fetch('http://localhost:3000/api/state', {
                 method: 'POST',
                 headers: {
@@ -1733,38 +3239,20 @@ class Orgaversum {
             });
 
             const result = await response.json();
-
             if (!result.success) {
-                console.error('Fehler beim Speichern:', result.error);
+                console.error('Server speichern fehlgeschlagen:', result.error);
             }
-
-            // Auch im localStorage speichern als Fallback
-            localStorage.setItem('orgaversum', JSON.stringify(data));
-
-            // Update retro list
-            this.updateRetroList();
         } catch (error) {
-            console.error('Fehler beim Speichern:', error);
-            // Fallback zu localStorage wenn Server nicht erreichbar
-            try {
-                const data = {
-                    suns: this.suns,
-                    planets: this.planets,
-                    moons: this.moons,
-                    connections: this.connections,
-                    nextId: this.nextId
-                };
-                localStorage.setItem('orgaversum', JSON.stringify(data));
-                this.updateRetroList();
-            } catch (e) {
-                console.error('Fehler beim localStorage-Fallback:', e);
-            }
+            // Server nicht erreichbar - localStorage wurde bereits gespeichert
+            console.log('Server nicht erreichbar, nur localStorage gespeichert');
         }
     }
 
     async loadData() {
+        let dataLoaded = false;
+
+        // Try to load from server first
         try {
-            // Versuche zuerst vom Server zu laden
             const response = await fetch('http://localhost:3000/api/state');
             const result = await response.json();
 
@@ -1777,35 +3265,41 @@ class Orgaversum {
                 this.nextId = data.nextId || 1;
 
                 console.log('✓ Daten vom Server geladen');
-                this.updateRetroList();
-                return;
+                dataLoaded = true;
             }
         } catch (error) {
             console.log('Server nicht erreichbar, lade aus localStorage...');
         }
 
-        // Fallback zu localStorage
-        try {
+        // Fallback to localStorage if server load failed
+        if (!dataLoaded) {
             const saved = localStorage.getItem('orgaversum');
             if (saved) {
-                const data = JSON.parse(saved);
-                this.suns = data.suns || [];
-                this.planets = data.planets || [];
-                this.moons = data.moons || [];
-                this.connections = data.connections || [];
-                this.nextId = data.nextId || 1;
+                try {
+                    const data = JSON.parse(saved);
+                    this.suns = data.suns || [];
+                    this.planets = data.planets || [];
+                    this.moons = data.moons || [];
+                    this.connections = data.connections || [];
+                    this.nextId = data.nextId || 1;
 
-                console.log('✓ Daten aus localStorage geladen');
-                this.updateRetroList();
+                    console.log('✓ Daten aus localStorage geladen');
+                } catch (e) {
+                    console.error('Failed to load data:', e);
+                }
             }
-        } catch (error) {
-            console.error('Fehler beim Laden aus localStorage:', error);
         }
+
+        this.updateRetroList();
+
+        // Initialize history with current state
+        this.history = [this.getCurrentState()];
+        this.currentHistoryIndex = 0;
+        this.updateUndoRedoButtons();
     }
 }
 
-// Initialize the app
-window.addEventListener('DOMContentLoaded', () => {
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
     new Orgaversum();
 });
-
