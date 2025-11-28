@@ -1713,3 +1713,99 @@ class Orgaversum {
         return null;
     }
 
+    // Data persistence methods
+    async saveData() {
+        try {
+            const data = {
+                suns: this.suns,
+                planets: this.planets,
+                moons: this.moons,
+                connections: this.connections,
+                nextId: this.nextId
+            };
+
+            const response = await fetch('http://localhost:3000/api/state', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+
+            const result = await response.json();
+
+            if (!result.success) {
+                console.error('Fehler beim Speichern:', result.error);
+            }
+
+            // Auch im localStorage speichern als Fallback
+            localStorage.setItem('orgaversum', JSON.stringify(data));
+
+            // Update retro list
+            this.updateRetroList();
+        } catch (error) {
+            console.error('Fehler beim Speichern:', error);
+            // Fallback zu localStorage wenn Server nicht erreichbar
+            try {
+                const data = {
+                    suns: this.suns,
+                    planets: this.planets,
+                    moons: this.moons,
+                    connections: this.connections,
+                    nextId: this.nextId
+                };
+                localStorage.setItem('orgaversum', JSON.stringify(data));
+                this.updateRetroList();
+            } catch (e) {
+                console.error('Fehler beim localStorage-Fallback:', e);
+            }
+        }
+    }
+
+    async loadData() {
+        try {
+            // Versuche zuerst vom Server zu laden
+            const response = await fetch('http://localhost:3000/api/state');
+            const result = await response.json();
+
+            if (result.success && result.data) {
+                const data = result.data;
+                this.suns = data.suns || [];
+                this.planets = data.planets || [];
+                this.moons = data.moons || [];
+                this.connections = data.connections || [];
+                this.nextId = data.nextId || 1;
+
+                console.log('✓ Daten vom Server geladen');
+                this.updateRetroList();
+                return;
+            }
+        } catch (error) {
+            console.log('Server nicht erreichbar, lade aus localStorage...');
+        }
+
+        // Fallback zu localStorage
+        try {
+            const saved = localStorage.getItem('orgaversum');
+            if (saved) {
+                const data = JSON.parse(saved);
+                this.suns = data.suns || [];
+                this.planets = data.planets || [];
+                this.moons = data.moons || [];
+                this.connections = data.connections || [];
+                this.nextId = data.nextId || 1;
+
+                console.log('✓ Daten aus localStorage geladen');
+                this.updateRetroList();
+            }
+        } catch (error) {
+            console.error('Fehler beim Laden aus localStorage:', error);
+        }
+    }
+}
+
+// Initialize the app
+window.addEventListener('DOMContentLoaded', () => {
+    new Orgaversum();
+});
+
