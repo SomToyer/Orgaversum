@@ -1,8 +1,7 @@
 const express = require('express');
 const cors = require('cors');
-const Database = require('better-sqlite3');
 const path = require('path');
-const fs = require('fs');
+const fs = require('fs').promises;
 
 const app = express();
 const PORT = 3000;
@@ -12,46 +11,123 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' })); // Erhöht für große Bild/Video-Dateien
 app.use(express.static(__dirname)); // Serviert statische Dateien (HTML, CSS, JS)
 
-// Datenbank initialisieren
-const dbPath = path.join(__dirname, 'orgaversum.db');
-const db = new Database(dbPath);
+// Datei-basierte Speicherung (einfacher als SQLite, keine Build-Tools nötig!)
+const DATA_DIR = path.join(__dirname, 'data');
+const STATE_FILE = path.join(DATA_DIR, 'current-state.json');
+const HISTORY_DIR = path.join(DATA_DIR, 'history');
 
-// Tabellen erstellen
-db.exec(`
-  CREATE TABLE IF NOT EXISTS universe_state (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    state_data TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )
-`);
+// Initialisierung
+async function initDataStorage() {
+  try {
+    // Erstelle Verzeichnisse falls nicht vorhanden
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    await fs.mkdir(HISTORY_DIR, { recursive: true });
+    console.log(`✓ Datenspeicher initialisiert: ${DATA_DIR}`);
+  } catch (error) {
+    console.error('Fehler beim Initialisieren:', error);
+  }
+}
 
-// Index für schnelleren Zugriff
-db.exec(`
-  CREATE INDEX IF NOT EXISTS idx_updated_at ON universe_state(updated_at DESC)
-`);
+// Hilfsfunktionen
+async function readState() {
+  try {
+    const data = await fs.readFile(STATE_FILE, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    return null; // Datei existiert noch nicht
+  }
+}
 
-console.log(`✓ Datenbank initialisiert: ${dbPath}`);
+async function writeState(state) {
+  const timestamp = new Date().toISOString();
+  const stateWithMeta = {
+    ...state,
+    updated_at: timestamp
+  };
+
+  // Speichere aktuellen Zustand
+  await fs.writeFile(STATE_FILE, JSON.stringify(stateWithMeta, null, 2));
+
+  // Speichere Kopie in History
+  const historyFile = path.join(HISTORY_DIR, `state-${Date.now()}.json`);
+  await fs.writeFile(historyFile, JSON.stringify(stateWithMeta, null, 2));
+
+  // Bereinige alte History-Dateien (nur die letzten 10 behalten)
+  await cleanupHistory();
+
+  return stateWithMeta;
+}
+
+async function cleanupHistory() {
+  try {
+    const files = await fs.readdir(HISTORY_DIR);
+    const stateFiles = files.filter(f => f.startsWith('state-') && f.endsWith('.json'));
+
+    if (stateFiles.length > 10) {
+      // Sortiere nach Datum (im Dateinamen enthalten)
+      stateFiles.sort().reverse();
+
+      // Lösche alle außer den neuesten 10
+      const toDelete = stateFiles.slice(10);
+      for (const file of toDelete) {
+        await fs.unlink(path.join(HISTORY_DIR, file));
+      }
+    }
+  } catch (error) {
+    console.error('Fehler beim Bereinigen der History:', error);
+  }
+}
+
+async function getHistory(limit = 10) {
+  try {
+    const files = await fs.readdir(HISTORY_DIR);
+    const stateFiles = files.filter(f => f.startsWith('state-') && f.endsWith('.json'));
+
+    // Sortiere nach Datum (neueste zuerst)
+    stateFiles.sort().reverse();
+
+    const history = [];
+    for (const file of stateFiles.slice(0, limit)) {
+      const filePath = path.join(HISTORY_DIR, file);
+      const stats = await fs.stat(filePath);
+      const data = await fs.readFile(filePath, 'utf8');
+      const state = JSON.parse(data);
+
+      history.push({
+        id: file,
+        updated_at: state.updated_at || stats.mtime.toISOString(),
+        size_bytes: stats.size
+      });
+    }
+
+    return history;
+  } catch (error) {
+    return [];
+  }
+}
 
 // API Endpunkte
 
 /**
  * GET /api/state - Lädt den aktuellen Zustand
  */
-app.get('/api/state', (req, res) => {
+app.get('/api/state', async (req, res) => {
   try {
-    const stmt = db.prepare('SELECT state_data, updated_at FROM universe_state ORDER BY id DESC LIMIT 1');
-    const row = stmt.get();
+    const state = await readState();
 
-    if (row) {
-      const state = JSON.parse(row.state_data);
+    if (state) {
       res.json({
         success: true,
-        data: state,
-        updated_at: row.updated_at
+        data: {
+          suns: state.suns || [],
+          planets: state.planets || [],
+          moons: state.moons || [],
+          connections: state.connections || [],
+          nextId: state.nextId || 1
+        },
+        updated_at: state.updated_at
       });
     } else {
-      // Kein gespeicherter Zustand vorhanden
       res.json({
         success: true,
         data: null,
@@ -70,7 +146,7 @@ app.get('/api/state', (req, res) => {
 /**
  * POST /api/state - Speichert den aktuellen Zustand
  */
-app.post('/api/state', (req, res) => {
+app.post('/api/state', async (req, res) => {
   try {
     const { suns, planets, moons, connections, nextId } = req.body;
 
@@ -82,29 +158,20 @@ app.post('/api/state', (req, res) => {
       });
     }
 
-    const stateData = JSON.stringify({
+    const state = {
       suns,
       planets,
       moons,
       connections,
       nextId: nextId || 1
-    });
+    };
 
-    // Speichern in Datenbank
-    const stmt = db.prepare(`
-      INSERT INTO universe_state (state_data, updated_at)
-      VALUES (?, CURRENT_TIMESTAMP)
-    `);
-
-    const result = stmt.run(stateData);
-
-    // Alte Einträge bereinigen (nur die letzten 10 behalten)
-    db.prepare('DELETE FROM universe_state WHERE id NOT IN (SELECT id FROM universe_state ORDER BY id DESC LIMIT 10)').run();
+    const savedState = await writeState(state);
 
     res.json({
       success: true,
       message: 'Zustand erfolgreich gespeichert',
-      id: result.lastInsertRowid
+      updated_at: savedState.updated_at
     });
   } catch (error) {
     console.error('Fehler beim Speichern:', error);
@@ -118,21 +185,14 @@ app.post('/api/state', (req, res) => {
 /**
  * GET /api/history - Zeigt die letzten gespeicherten Zustände
  */
-app.get('/api/history', (req, res) => {
+app.get('/api/history', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10;
-    const stmt = db.prepare(`
-      SELECT id, updated_at,
-             length(state_data) as size_bytes
-      FROM universe_state
-      ORDER BY id DESC
-      LIMIT ?
-    `);
-    const rows = stmt.all(limit);
+    const history = await getHistory(limit);
 
     res.json({
       success: true,
-      data: rows
+      data: history
     });
   } catch (error) {
     console.error('Fehler beim Abrufen der History:', error);
@@ -146,30 +206,30 @@ app.get('/api/history', (req, res) => {
 /**
  * GET /api/state/:id - Lädt einen bestimmten Zustand aus der History
  */
-app.get('/api/state/:id', (req, res) => {
+app.get('/api/state/:id', async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
-    const stmt = db.prepare('SELECT state_data, updated_at FROM universe_state WHERE id = ?');
-    const row = stmt.get(id);
+    const id = req.params.id;
+    const filePath = path.join(HISTORY_DIR, id);
 
-    if (row) {
-      const state = JSON.parse(row.state_data);
-      res.json({
-        success: true,
-        data: state,
-        updated_at: row.updated_at
-      });
-    } else {
-      res.status(404).json({
-        success: false,
-        error: 'Zustand nicht gefunden'
-      });
-    }
+    const data = await fs.readFile(filePath, 'utf8');
+    const state = JSON.parse(data);
+
+    res.json({
+      success: true,
+      data: {
+        suns: state.suns || [],
+        planets: state.planets || [],
+        moons: state.moons || [],
+        connections: state.connections || [],
+        nextId: state.nextId || 1
+      },
+      updated_at: state.updated_at
+    });
   } catch (error) {
     console.error('Fehler beim Laden:', error);
-    res.status(500).json({
+    res.status(404).json({
       success: false,
-      error: 'Fehler beim Laden des Zustands'
+      error: 'Zustand nicht gefunden'
     });
   }
 });
@@ -177,9 +237,21 @@ app.get('/api/state/:id', (req, res) => {
 /**
  * DELETE /api/state - Löscht alle gespeicherten Zustände
  */
-app.delete('/api/state', (req, res) => {
+app.delete('/api/state', async (req, res) => {
   try {
-    db.prepare('DELETE FROM universe_state').run();
+    // Lösche aktuellen Zustand
+    try {
+      await fs.unlink(STATE_FILE);
+    } catch (e) {
+      // Datei existiert nicht, ist OK
+    }
+
+    // Lösche History
+    const files = await fs.readdir(HISTORY_DIR);
+    for (const file of files) {
+      await fs.unlink(path.join(HISTORY_DIR, file));
+    }
+
     res.json({
       success: true,
       message: 'Alle Zustände gelöscht'
@@ -194,13 +266,14 @@ app.delete('/api/state', (req, res) => {
 });
 
 // Server starten
-app.listen(PORT, () => {
-  console.log(`
+initDataStorage().then(() => {
+  app.listen(PORT, () => {
+    console.log(`
 ╔════════════════════════════════════════════════════════════╗
 ║                   ORGAVERSUM SERVER                        ║
 ╠════════════════════════════════════════════════════════════╣
 ║  Server läuft auf: http://localhost:${PORT}                 ║
-║  Datenbank: ${dbPath.substring(dbPath.lastIndexOf('/') + 1).padEnd(43)} ║
+║  Datenspeicher: ${DATA_DIR.split(path.sep).pop().padEnd(40)} ║
 ║                                                            ║
 ║  API Endpunkte:                                            ║
 ║  - GET    /api/state      - Aktuellen Zustand laden       ║
@@ -208,13 +281,16 @@ app.listen(PORT, () => {
 ║  - GET    /api/history    - Speicher-Historie anzeigen    ║
 ║  - GET    /api/state/:id  - Bestimmten Zustand laden      ║
 ║  - DELETE /api/state      - Alle Zustände löschen         ║
+║                                                            ║
+║  💡 Daten werden als JSON-Dateien gespeichert             ║
+║     Kein SQLite, keine Build-Tools nötig!                 ║
 ╚════════════════════════════════════════════════════════════╝
-  `);
+    `);
+  });
 });
 
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\nServer wird beendet...');
-  db.close();
   process.exit(0);
 });

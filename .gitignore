@@ -2,7 +2,8 @@
 node_modules/
 package-lock.json
 
-# Database
+# Data storage
+data/
 *.db
 *.db-shm
 *.db-wal
